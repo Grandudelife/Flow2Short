@@ -1,4 +1,4 @@
-const CACHE_NAME = "flow2short-studio-v5";
+const CACHE_NAME = "flow2short-studio-v7";
 const APP_ASSETS = [
   "./",
   "./index.html",
@@ -52,6 +52,18 @@ self.addEventListener("fetch", (event) => {
         })
         .catch(() => caches.match("./index.html"))
     );
+    return;
+  }
+
+  // App code and styles must follow the installed Mac package, even on the same localhost port.
+  if (/\/(app\.js|styles\.css)$/.test(requestUrl.pathname)) {
+    event.respondWith(fetch(event.request).then((response) => {
+      if (response.ok) {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+      }
+      return response;
+    }).catch(() => caches.match(event.request)));
     return;
   }
 

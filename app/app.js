@@ -14,6 +14,7 @@ const state = {
     position: "bottom",
     color: "#ffdc42",
     offsetMs: 0,
+    groupSize: 3,
   },
   ffmpeg: null,
   ffmpegLoaded: false,
@@ -52,7 +53,11 @@ const refs = {
   narrationInput: $("#narrationInput"),
   musicInput: $("#musicInput"),
   captionInput: $("#captionInput"),
+  captionGroupSize: $("#captionGroupSize"),
   captionOffsetMs: $("#captionOffsetMs"),
+  previewCaptionOffsetMs: $("#previewCaptionOffsetMs"),
+  previewCaptionGroupSize: $("#previewCaptionGroupSize"),
+  previewCaptionStatus: $("#previewCaptionStatus"),
   captionSyncStatus: $("#captionSyncStatus"),
   captionStylePreview: $("#captionStylePreview"),
   captionFontSize: $("#captionFontSize"),
@@ -160,6 +165,48 @@ function parseSrt(text) {
     .sort((a, b) => a.start - b.start);
 }
 
+function buildCaptionEvents(cues, groupSize, wordByWord) {
+  if (!wordByWord || groupSize === 1) {
+    return cues.map((cue, index) => ({ ...cue, previousText: "", word: cue.text, groupId: index }));
+  }
+
+  const events = [];
+  let words = [];
+  let groupId = 0;
+  for (const cue of cues) {
+    const previous = events.at(-1);
+    const newGroup = words.length === 0 || words.length >= groupSize ||
+      /[.!?؟。！？;؛:,،]$/u.test(previous.word) || cue.start - previous.end > 0.55;
+    if (newGroup) {
+      words = [];
+      if (previous) groupId += 1;
+      if (previous && previous.end > cue.start) previous.end = cue.start;
+    } else {
+      // Keep the words already shown visible until the next word arrives.
+      previous.end = cue.start;
+    }
+    const previousText = words.join(" ");
+    words.push(cue.text);
+    events.push({ start: cue.start, end: cue.end, text: words.join(" "), previousText, word: cue.text, groupId });
+  }
+  return events.filter((cue) => cue.end > cue.start);
+}
+
+function refreshCaptionDisplay() {
+  if (!state.caption) return;
+  state.caption.displayCues = buildCaptionEvents(state.caption.cues, state.captionStyle.groupSize, state.caption.wordByWord);
+  const mode = state.caption.wordByWord
+    ? state.captionStyle.groupSize === 1 ? "نمایش تک‌کلمه‌ای" : `پانچ ${toFaDigits(state.captionStyle.groupSize)} کلمه‌ای`
+    : "زیرنویس معمولی";
+  $("#captionMeta").textContent = `${toFaDigits(state.caption.cues.length)} ${state.caption.wordByWord ? "کلمه" : "زیرنویس"} · ${mode} · ${formatBytes(state.caption.file.size)}`;
+  const firstGroup = state.caption.displayCues.filter((cue) => cue.groupId === state.caption.displayCues[0]?.groupId);
+  refs.captionStylePreview.textContent = firstGroup.at(-1)?.text || "YOUR NEXT BIG IDEA";
+  refs.captionStylePreview.setAttribute("aria-label", "نمونه عبارت کامل: " + refs.captionStylePreview.textContent);
+  refs.previewCaptionGroupSize.value = String(state.captionStyle.groupSize);
+  refs.mixPreviewCaption.dataset.cue = "";
+  updatePreviewCaption(state.preview.globalTime);
+}
+
 function hexToAssColor(hex, alpha = "00") {
   const value = String(hex || "#ffffff").replace("#", "").padEnd(6, "f").slice(0, 6);
   return `&H${alpha}${value.slice(4, 6)}${value.slice(2, 4)}${value.slice(0, 2)}`.toUpperCase();
@@ -188,20 +235,20 @@ function buildAssCaptions(width, height) {
   const background = hexToAssColor(preset.background || "#07111f", preset.borderStyle === 3 ? "28" : "80");
   const outlineWidth = preset.borderStyle === 3 ? Math.max(7, preset.outline) : preset.outline;
   const isWordByWord = state.caption.wordByWord;
-  const events = state.caption.cues.map((cue) => {
+  const events = state.caption.displayCues.map((cue) => {
     const start = Math.max(0, cue.start + state.captionStyle.offsetMs / 1000);
     const end = cue.end + state.captionStyle.offsetMs / 1000;
     if (end <= start) return "";
     const popDuration = Math.min(100, Math.max(0, Math.round((end - start) * 500)));
-    const entrance = isWordByWord
-      ? `{\\fscx84\\fscy84\\t(0,${popDuration},\\fscx100\\fscy100)}`
-      : "{\\fad(120,120)}";
-    const text = cue.text
+    const escapeAss = (value) => value
       .replace(/\\/g, "\\\\")
       .replace(/{/g, "\\{")
       .replace(/}/g, "\\}")
       .replace(/\n/g, "\\N");
-    return `Dialogue: 0,${formatAssTime(start)},${formatAssTime(end)},Flow2Short,,0,0,0,,${entrance}${text}`;
+    const text = isWordByWord
+      ? `${cue.previousText ? `${escapeAss(cue.previousText)} ` : ""}{\\fscx84\\fscy84\\t(0,${popDuration},\\fscx100\\fscy100)}${escapeAss(cue.word)}`
+      : `{\\fad(120,120)}${escapeAss(cue.text)}`;
+    return `Dialogue: 0,${formatAssTime(start)},${formatAssTime(end)},Flow2Short,,0,0,0,,${text}`;
   }).filter(Boolean).join("\n");
   return `[Script Info]
 ScriptType: v4.00+
@@ -243,6 +290,7 @@ function applyCaptionStyle() {
   if (!CAPTION_PRESETS[state.captionStyle.preset]) state.captionStyle.preset = "clean";
   state.captionStyle.fontSize = Math.max(36, Math.min(84, Number(state.captionStyle.fontSize) || 58));
   if (!["top", "center", "bottom"].includes(state.captionStyle.position)) state.captionStyle.position = "bottom";
+  state.captionStyle.groupSize = [1, 3, 4].includes(Number(state.captionStyle.groupSize)) ? Number(state.captionStyle.groupSize) : 3;
   if (!/^#[0-9a-f]{6}$/i.test(state.captionStyle.color || "")) state.captionStyle.color = CAPTION_PRESETS[state.captionStyle.preset].color;
   const preset = CAPTION_PRESETS[state.captionStyle.preset] || CAPTION_PRESETS.clean;
   const elements = [refs.captionStylePreview, refs.mixPreviewCaption];
@@ -256,6 +304,8 @@ function applyCaptionStyle() {
   refs.captionFontSize.value = state.captionStyle.fontSize;
   refs.captionPosition.value = state.captionStyle.position;
   refs.captionColor.value = state.captionStyle.color || preset.color;
+  refs.captionGroupSize.value = String(state.captionStyle.groupSize);
+  refs.previewCaptionGroupSize.value = String(state.captionStyle.groupSize);
   $("#captionFontSizeValue").textContent = toFaDigits(state.captionStyle.fontSize);
   $("#captionPresetName").textContent = preset.name;
   $$('[data-caption-preset]').forEach((button) => {
@@ -484,25 +534,38 @@ function previewSegmentAt(time) {
 function updatePreviewCaption(time) {
   const offset = state.captionStyle.offsetMs / 1000;
   const index = $("#burnCaptions").checked
-    ? state.caption?.cues?.findIndex((item) => time >= item.start + offset && time < item.end + offset) ?? -1
+    ? state.caption?.displayCues?.findIndex((item) => time >= item.start + offset && time < item.end + offset) ?? -1
     : -1;
-  const cue = index >= 0 ? state.caption.cues[index] : null;
+  const cue = index >= 0 ? state.caption.displayCues[index] : null;
   if (cue && refs.mixPreviewCaption.dataset.cue !== String(index)) {
     refs.mixPreviewCaption.dataset.cue = String(index);
     if (state.caption.wordByWord) {
-      refs.mixPreviewCaption.classList.remove("word-pop");
-      void refs.mixPreviewCaption.offsetWidth;
-      refs.mixPreviewCaption.classList.add("word-pop");
+      const word = document.createElement("span");
+      word.className = "caption-active-word";
+      word.textContent = cue.word;
+      refs.mixPreviewCaption.replaceChildren(document.createTextNode(cue.previousText ? `${cue.previousText} ` : ""), word);
     } else {
-      refs.mixPreviewCaption.classList.remove("word-pop");
+      refs.mixPreviewCaption.textContent = cue.text;
     }
   }
   if (!cue) {
     refs.mixPreviewCaption.dataset.cue = "";
-    refs.mixPreviewCaption.classList.remove("word-pop");
+    refs.mixPreviewCaption.textContent = "";
   }
   refs.mixPreviewCaption.hidden = !cue;
-  refs.mixPreviewCaption.textContent = cue?.text || "";
+  if (state.caption) {
+    const shiftedTime = time - offset;
+    refs.previewCaptionStatus.textContent = cue
+      ? `${cue.text} · زمان ویدئو ${formatPreciseTime(time)} · زمان SRT ${formatPreciseTime(shiftedTime)}`
+      : `در ${formatPreciseTime(time)} زیرنویسی نیست · زمان SRT ${formatPreciseTime(shiftedTime)}`;
+  } else {
+    refs.previewCaptionStatus.textContent = "برای دیدن زیرنویس، فایل SRT وارد کنید.";
+  }
+}
+
+function formatPreciseTime(seconds) {
+  const ms = Math.max(0, Math.round(seconds * 1000));
+  return toFaDigits(`${String(Math.floor(ms / 60000)).padStart(2, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}.${String(ms % 1000).padStart(3, "0")}`);
 }
 
 function updateMixPreviewUI(time) {
@@ -748,12 +811,10 @@ async function setCaption(file) {
     const cues = parseSrt(await file.text());
     if (!cues.length) throw new Error("زمان‌بندی معتبری داخل فایل SRT پیدا نشد.");
     const wordByWord = cues.every((cue) => !/\s/u.test(cue.text.trim()));
-    state.caption = { file, cues, wordByWord };
+    state.caption = { file, cues, wordByWord, displayCues: [] };
     $("#captionName").textContent = file.name;
-    $("#captionMeta").textContent = `${toFaDigits(cues.length)} ${wordByWord ? "کلمه · نمایش کلمه‌به‌کلمه" : "زیرنویس"} · ${formatBytes(file.size)}`;
     $('[data-remove="caption"]').hidden = false;
-    refs.captionStylePreview.textContent = cues[0].text;
-    updatePreviewCaption(state.preview.globalTime);
+    refreshCaptionDisplay();
     saveDraft();
   } catch (error) {
     refs.captionInput.value = "";
@@ -837,6 +898,7 @@ async function importProject(file) {
     $("#burnCaptions").checked = recipe.project.caption?.burn ?? true;
     state.captionStyle = { ...state.captionStyle, ...(recipe.project.captionStyle || {}) };
     applyCaptionStyle();
+    refreshCaptionDisplay();
     setCaptionOffset(state.captionStyle.offsetMs, false);
     syncGlobalRanges();
     updateSummary();
@@ -879,11 +941,12 @@ function loadPreferences() {
   setCaptionOffset(state.captionStyle.offsetMs, false);
 }
 
-function setCaptionOffset(value, persist = true) {
+function setCaptionOffset(value, persist = true, editingInput = null) {
   const number = Number(value);
   const offset = Number.isFinite(number) ? Math.max(-60000, Math.min(60000, Math.round(number / 10) * 10)) : 0;
   state.captionStyle.offsetMs = offset;
-  refs.captionOffsetMs.value = offset;
+  if (editingInput !== refs.captionOffsetMs) refs.captionOffsetMs.value = offset;
+  if (editingInput !== refs.previewCaptionOffsetMs) refs.previewCaptionOffsetMs.value = offset;
   refs.captionSyncStatus.textContent = offset === 0
     ? "بدون جابه‌جایی زمانی"
     : `${toFaDigits(Math.abs(offset))} میلی‌ثانیه ${offset < 0 ? "زودتر" : "دیرتر"}`;
@@ -1282,9 +1345,25 @@ function wireEvents() {
     applyCaptionStyle();
     saveDraft();
   });
-  refs.captionOffsetMs.addEventListener("change", () => setCaptionOffset(refs.captionOffsetMs.value));
+  [refs.captionGroupSize, refs.previewCaptionGroupSize].forEach((select) => select.addEventListener("change", () => {
+    state.captionStyle.groupSize = Number(select.value);
+    refreshCaptionDisplay();
+    saveDraft();
+  }));
+  [refs.captionOffsetMs, refs.previewCaptionOffsetMs].forEach((input) => {
+    input.addEventListener("input", () => {
+      if (input.value !== "") setCaptionOffset(input.value, true, input);
+    });
+    input.addEventListener("change", () => setCaptionOffset(input.value));
+  });
   $$('[data-caption-shift]').forEach((button) => {
     button.addEventListener("click", () => setCaptionOffset(state.captionStyle.offsetMs + Number(button.dataset.captionShift)));
+  });
+  $("#previewFirstCaption").addEventListener("click", () => {
+    if (!state.caption?.displayCues?.length) return showToast("ابتدا فایل SRT وارد کنید.");
+    const firstTime = Math.max(0, state.caption.displayCues[0].start + state.captionStyle.offsetMs / 1000 + 0.01);
+    loadMixPreviewAt(Math.min(firstTime, Math.max(0, state.preview.total - 0.01)), state.preview.playing)
+      .catch((error) => showToast(error.message));
   });
   $("#captionOffsetReset").addEventListener("click", () => setCaptionOffset(0));
   $("#burnCaptions").addEventListener("change", () => {

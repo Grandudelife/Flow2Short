@@ -10,7 +10,7 @@
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.png" type="image/png" sizes="48x48" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=1.4" />
   </head>
   <body>
     <a class="skip-link" href="#workspace">رفتن به محیط تدوین</a>
@@ -214,6 +214,15 @@
                 <label><span>جایگاه</span><select id="captionPosition"><option value="bottom">پایین — پیشنهادی</option><option value="center">وسط</option><option value="top">بالا</option></select></label>
                 <label><span>رنگ اصلی</span><input class="caption-color" id="captionColor" type="color" value="#ffdc42" aria-label="رنگ اصلی زیرنویس" /></label>
               </div>
+              <div class="caption-flow">
+                <label for="captionGroupSize">نمایش کلمات</label>
+                <select id="captionGroupSize" aria-describedby="captionGroupHelp">
+                  <option value="3">پانچ ۳ کلمه‌ای</option>
+                  <option value="4">پانچ ۴ کلمه‌ای</option>
+                  <option value="1">تک‌کلمه‌ای</option>
+                </select>
+                <p id="captionGroupHelp">هر کلمه به عبارت اضافه می‌شود؛ پس از چند کلمه، عبارت بعدی شروع می‌شود. برای این حالت، هر ورودی SRT باید یک کلمه باشد.</p>
+              </div>
               <div class="caption-sync">
                 <div class="caption-sync-heading"><strong>هماهنگی زیرنویس با صدا</strong><span>مقدار منفی: زودتر · مقدار مثبت: دیرتر</span></div>
                 <div class="caption-sync-controls" dir="ltr">
@@ -327,6 +336,21 @@
             <span><i class="status-music"></i>موسیقی</span>
           </div>
           <p class="preview-note">این پیش‌نمایش سریع است؛ کیفیت تصویر خروجی نهایی براساس تنظیمات بخش خروجی ساخته می‌شود.</p>
+          <div class="preview-caption-controls" dir="rtl">
+            <strong>زیرنویس در همین لحظه</strong>
+            <p id="previewCaptionStatus" aria-live="polite">برای دیدن زیرنویس، فایل SRT وارد کنید.</p>
+            <div class="preview-caption-row">
+              <label for="previewCaptionGroupSize">نمایش کلمات</label>
+              <select id="previewCaptionGroupSize"><option value="3">پانچ ۳ کلمه‌ای</option><option value="4">پانچ ۴ کلمه‌ای</option><option value="1">تک‌کلمه‌ای</option></select>
+            </div>
+            <div class="preview-caption-row">
+              <label for="previewCaptionOffsetMs">هماهنگی با صدا (ms)</label>
+              <button type="button" data-caption-shift="-100">−۱۰۰</button>
+              <input id="previewCaptionOffsetMs" type="number" min="-60000" max="60000" step="10" value="0" inputmode="numeric" dir="ltr" />
+              <button type="button" data-caption-shift="100">+۱۰۰</button>
+            </div>
+            <button class="preview-caption-jump" type="button" id="previewFirstCaption">رفتن به اولین کلمه</button>
+          </div>
         </div>
       </div>
       <audio id="mixPreviewNarration" preload="auto"></audio>
@@ -335,6 +359,6 @@
 
     <input id="projectImportInput" type="file" accept="application/json,.json" hidden />
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script defer src="./app.js"></script>
+    <script defer src="./app.js?v=1.4"></script>
   </body>
 </html>
