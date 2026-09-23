@@ -19,3 +19,5 @@ else if (typeof define === 'function' && define['amd'])
   define([], function() { return createFFmpegCore; });
 else if (typeof exports === 'object')
   exports["createFFmpegCore"] = createFFmpegCore;
+
+export default createFFmpegCore;
