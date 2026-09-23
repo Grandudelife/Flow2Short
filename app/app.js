@@ -8,6 +8,8 @@ const state = {
   narration: null,
   music: null,
   caption: null,
+  logo: null,
+  logoStyle: { position: "top-right", sizePercent: 18 },
   captionStyle: {
     preset: "impact",
     fontSize: 58,
@@ -53,6 +55,15 @@ const refs = {
   narrationInput: $("#narrationInput"),
   musicInput: $("#musicInput"),
   captionInput: $("#captionInput"),
+  logoInput: $("#logoInput"),
+  previewLogoInput: $("#previewLogoInput"),
+  logoPosition: $("#logoPosition"),
+  logoSize: $("#logoSize"),
+  previewLogoPosition: $("#previewLogoPosition"),
+  previewLogoSize: $("#previewLogoSize"),
+  logoStageVideo: $("#logoStageVideo"),
+  logoStageMark: $("#logoStageMark"),
+  mixPreviewLogo: $("#mixPreviewLogo"),
   captionGroupSize: $("#captionGroupSize"),
   captionOffsetMs: $("#captionOffsetMs"),
   previewCaptionOffsetMs: $("#previewCaptionOffsetMs"),
@@ -325,6 +336,110 @@ function setCaptionPreset(name) {
   saveDraft();
 }
 
+const LOGO_POSITIONS = new Set([
+  "top-left", "top-center", "top-right", "center-left", "center", "center-right",
+  "bottom-left", "bottom-center", "bottom-right",
+]);
+
+function logoDimensions(frameWidth, frameHeight, imageWidth, imageHeight) {
+  const maxWidth = Math.round(frameWidth * state.logoStyle.sizePercent / 100);
+  const maxHeight = Math.round(frameHeight * 0.30);
+  const ratio = Math.min(maxWidth / imageWidth, maxHeight / imageHeight);
+  return { width: Math.max(1, Math.round(imageWidth * ratio)), height: Math.max(1, Math.round(imageHeight * ratio)) };
+}
+
+function logoCoordinates(frameWidth, frameHeight, logoWidth, logoHeight) {
+  const position = state.logoStyle.position;
+  const marginX = Math.round(frameWidth * 0.05);
+  const marginY = Math.round(frameHeight * 0.04);
+  return {
+    x: position.endsWith("left") ? marginX : position.endsWith("right") ? frameWidth - logoWidth - marginX : Math.round((frameWidth - logoWidth) / 2),
+    y: position.startsWith("top") ? marginY : position.startsWith("bottom") ? frameHeight - logoHeight - marginY : Math.round((frameHeight - logoHeight) / 2),
+  };
+}
+
+function applyLogoStyle() {
+  if (!LOGO_POSITIONS.has(state.logoStyle.position)) state.logoStyle.position = "top-right";
+  state.logoStyle.sizePercent = Math.max(5, Math.min(35, Number(state.logoStyle.sizePercent) || 18));
+  refs.logoPosition.value = state.logoStyle.position;
+  refs.previewLogoPosition.value = state.logoStyle.position;
+  refs.logoSize.value = state.logoStyle.sizePercent;
+  refs.previewLogoSize.value = state.logoStyle.sizePercent;
+  $("#logoSizeValue").textContent = `${toFaDigits(state.logoStyle.sizePercent)}٪`;
+  $("#previewLogoSizeValue").textContent = `${toFaDigits(state.logoStyle.sizePercent)}٪`;
+  setRangeVisual(refs.logoSize);
+  setRangeVisual(refs.previewLogoSize);
+  const width = state.logo ? `${logoDimensions(1080, 1920, state.logo.width, state.logo.height).width / 1080 * 100}%` : "";
+  [refs.logoStageMark, refs.mixPreviewLogo].forEach((element) => {
+    element.dataset.position = state.logoStyle.position;
+    element.style.width = width;
+    element.hidden = !state.logo;
+  });
+  $("#previewLogoName").textContent = state.logo ? state.logo.file.name : "هنوز لوگویی انتخاب نشده است.";
+}
+
+async function setLogo(file) {
+  if (!file) return;
+  if (!/\.(png|jpe?g|webp)$/i.test(file.name) || file.size > 12 * 1024 * 1024) {
+    refs.logoInput.value = "";
+    refs.previewLogoInput.value = "";
+    return showToast("لوگو باید PNG، JPG یا WebP و حداکثر ۱۲ مگابایت باشد.");
+  }
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+    if (bitmap.width * bitmap.height > 24_000_000) throw new Error("ابعاد تصویر لوگو بیش از حد بزرگ است.");
+    const width = bitmap.width;
+    const height = bitmap.height;
+    if (state.logo?.url) URL.revokeObjectURL(state.logo.url);
+    state.logo = { file, width, height, url: URL.createObjectURL(file) };
+    refs.mixPreviewLogo.src = state.logo.url;
+    refs.logoStageMark.src = state.logo.url;
+    $("#logoName").textContent = file.name;
+    $("#logoMeta").textContent = `${toFaDigits(width)} × ${toFaDigits(height)} · ${formatBytes(file.size)}`;
+    $("#removeLogo").hidden = false;
+    applyLogoStyle();
+    saveDraft();
+  } catch (error) {
+    refs.logoInput.value = "";
+    refs.previewLogoInput.value = "";
+    showToast(error.message || "تصویر لوگو خوانده نشد.");
+  } finally {
+    refs.logoInput.value = "";
+    refs.previewLogoInput.value = "";
+    bitmap?.close();
+  }
+}
+
+function removeLogo(persist = true) {
+  if (state.logo?.url) URL.revokeObjectURL(state.logo.url);
+  state.logo = null;
+  refs.logoInput.value = "";
+  refs.previewLogoInput.value = "";
+  refs.mixPreviewLogo.removeAttribute("src");
+  refs.logoStageMark.removeAttribute("src");
+  $("#logoName").textContent = "فایلی انتخاب نشده";
+  $("#logoMeta").textContent = "PNG، JPG یا WebP";
+  $("#removeLogo").hidden = true;
+  applyLogoStyle();
+  if (persist) saveDraft();
+}
+
+async function logoPngBytes(frameWidth, frameHeight) {
+  const bitmap = await createImageBitmap(state.logo.file);
+  try {
+    const { width, height } = logoDimensions(frameWidth, frameHeight, bitmap.width, bitmap.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, width, height);
+    const blob = await new Promise((resolve, reject) => canvas.toBlob((image) => image ? resolve(image) : reject(new Error("آماده‌سازی لوگو ممکن نشد.")), "image/png"));
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), width, height };
+  } finally {
+    bitmap.close();
+  }
+}
+
 function getMediaDuration(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -462,6 +577,32 @@ function renderClipCards() {
   `).join("");
 
   $$('input[type="range"]', refs.clipList).forEach(setRangeVisual);
+  updateLogoStage();
+}
+
+function updateLogoStage() {
+  const clip = state.clips[0];
+  refs.logoStageVideo.style.objectFit = refs.fitMode.value === "contain" ? "contain" : "cover";
+  if (!clip) {
+    refs.logoStageVideo.pause();
+    refs.logoStageVideo.removeAttribute("src");
+    refs.logoStageVideo.load();
+    refs.logoStageVideo.hidden = true;
+    $("#logoStagePlaceholder").hidden = false;
+    return;
+  }
+  refs.logoStageVideo.hidden = false;
+  $("#logoStagePlaceholder").hidden = true;
+  if (refs.logoStageVideo.src !== clip.url) {
+    refs.logoStageVideo.src = clip.url;
+    refs.logoStageVideo.load();
+  }
+  const seek = () => {
+    const target = Math.min(clip.start + 0.25, Math.max(0, clip.end - 0.05));
+    try { refs.logoStageVideo.currentTime = target; } catch { /* metadata is not ready yet */ }
+  };
+  if (refs.logoStageVideo.readyState >= 1) seek();
+  else refs.logoStageVideo.onloadedmetadata = seek;
 }
 
 function updateSummary() {
@@ -856,6 +997,8 @@ function getRecipe() {
       music: state.music ? { name: state.music.file.name, size: state.music.file.size, volume: Number($("#musicVolume").value) } : null,
       caption: state.caption ? { name: state.caption.file.name, burn: $("#burnCaptions").checked } : null,
       captionStyle: { ...state.captionStyle },
+      logo: state.logo ? { name: state.logo.file.name, size: state.logo.file.size } : null,
+      logoStyle: { ...state.logoStyle },
       output: {
         name: safeFileName(refs.outputName.value),
         resolution: refs.resolution.value,
@@ -897,6 +1040,13 @@ async function importProject(file) {
     $("#musicVolume").value = recipe.project.music?.volume ?? 18;
     $("#burnCaptions").checked = recipe.project.caption?.burn ?? true;
     state.captionStyle = { ...state.captionStyle, ...(recipe.project.captionStyle || {}) };
+    removeLogo(false);
+    state.logoStyle = { ...state.logoStyle, ...(recipe.project.logoStyle || {}) };
+    applyLogoStyle();
+    if (recipe.project.logo?.name) {
+      $("#logoMeta").textContent = `برای این پروژه دوباره انتخاب کنید: ${recipe.project.logo.name}`;
+      $("#previewLogoName").textContent = `لوگو را دوباره انتخاب کنید: ${recipe.project.logo.name}`;
+    }
     applyCaptionStyle();
     refreshCaptionDisplay();
     setCaptionOffset(state.captionStyle.offsetMs, false);
@@ -917,6 +1067,7 @@ function saveDraft() {
 }
 
 function loadPreferences() {
+  let rememberedLogoName = "";
   try {
     const settings = JSON.parse(localStorage.getItem("flow2short-settings") || "{}");
     state.settings = { ...state.settings, ...settings };
@@ -933,11 +1084,18 @@ function loadPreferences() {
       $("#musicVolume").value = draft.project.music?.volume ?? 18;
       $("#burnCaptions").checked = draft.project.caption?.burn ?? true;
       state.captionStyle = { ...state.captionStyle, ...(draft.project.captionStyle || {}) };
+      state.logoStyle = { ...state.logoStyle, ...(draft.project.logoStyle || {}) };
+      if (draft.project.logo?.name) {
+        rememberedLogoName = draft.project.logo.name;
+        $("#logoMeta").textContent = `برای ادامه دوباره انتخاب کنید: ${draft.project.logo.name}`;
+      }
     }
   } catch {
     localStorage.removeItem("flow2short-draft");
   }
   applyCaptionStyle();
+  applyLogoStyle();
+  if (rememberedLogoName) $("#previewLogoName").textContent = `لوگو را دوباره انتخاب کنید: ${rememberedLogoName}`;
   setCaptionOffset(state.captionStyle.offsetMs, false);
 }
 
@@ -1141,6 +1299,7 @@ async function renderVideo() {
       finalArgs.push("-stream_loop", "-1", "-i", name);
       filterParts.push(`[${inputIndex}:a]volume=${(Number($("#musicVolume").value) / 100).toFixed(2)},aresample=48000[a${inputIndex}]`);
       audioLabels.push(`[a${inputIndex}]`);
+      inputIndex += 1;
     }
 
     let burnCaptions = Boolean(state.caption && $("#burnCaptions").checked);
@@ -1151,44 +1310,49 @@ async function renderVideo() {
       workingFiles.push("captions.ass", "DejaVuSans.ttf");
     }
 
-    if (audioLabels.length > 1) {
-      filterParts.push(`${audioLabels.join("")}amix=inputs=${audioLabels.length}:duration=first:dropout_transition=2:normalize=0,alimiter=limit=0.95[aout]`);
-      finalArgs.push("-filter_complex", filterParts.join(";"));
+    let logoInfo = null;
+    let logoInputIndex = -1;
+    if (state.logo) {
+      logoInfo = await logoPngBytes(width, height);
+      logoInputIndex = inputIndex;
+      await ffmpeg.writeFile("logo.png", logoInfo.bytes);
+      workingFiles.push("logo.png");
+      finalArgs.push("-loop", "1", "-framerate", "30", "-i", "logo.png");
     }
 
     const output = "final.mp4";
     workingFiles.push(output);
-    const appendOutputOptions = () => {
-      finalArgs.push("-map", "0:v:0", "-map", audioLabels.length > 1 ? "[aout]" : "0:a:0");
-      if (burnCaptions) {
-        finalArgs.push(
-          "-vf", "subtitles=captions.ass:fontsdir=.",
-          "-c:v", "libx264", "-preset", settings.preset, "-crf", settings.crf,
-        );
-      } else {
-        finalArgs.push("-c:v", "copy");
+    const buildFinalArgs = (withCaptions) => {
+      const args = [...finalArgs];
+      const parts = audioLabels.length > 1
+        ? [...filterParts, `${audioLabels.join("")}amix=inputs=${audioLabels.length}:duration=first:dropout_transition=2:normalize=0,alimiter=limit=0.95[aout]`]
+        : [];
+      if (logoInfo) {
+        const { x, y } = logoCoordinates(width, height, logoInfo.width, logoInfo.height);
+        const source = withCaptions ? "[captioned]" : "[0:v]";
+        if (withCaptions) parts.push("[0:v]subtitles=captions.ass:fontsdir=.[captioned]");
+        parts.push(`${source}[${logoInputIndex}:v]overlay=${x}:${y}:shortest=1:format=auto,format=yuv420p[vout]`);
       }
-      finalArgs.push("-c:a", "aac", "-b:a", settings.audio, "-ar", "48000", "-movflags", "+faststart", "-shortest", output);
+      if (parts.length) args.push("-filter_complex", parts.join(";"));
+      args.push("-map", logoInfo ? "[vout]" : "0:v:0", "-map", audioLabels.length > 1 ? "[aout]" : "0:a:0");
+      if (withCaptions && !logoInfo) args.push("-vf", "subtitles=captions.ass:fontsdir=.");
+      if (withCaptions || logoInfo) args.push("-c:v", "libx264", "-preset", settings.preset, "-crf", settings.crf);
+      else args.push("-c:v", "copy");
+      args.push("-c:a", "aac", "-b:a", settings.audio, "-ar", "48000", "-movflags", "+faststart", "-shortest", output);
+      return args;
     };
 
-    updateRenderProgress(0.76, "میکس صدا و ساخت خروجی", burnCaptions ? "صداها میکس و زیرنویس روی تصویر تثبیت می‌شود." : "صداهای انتخاب‌شده با هم میکس می‌شوند.");
-    appendOutputOptions();
-    let finalResult = await ffmpeg.exec(finalArgs);
+    updateRenderProgress(0.76, "میکس صدا و ساخت خروجی", logoInfo ? "لوگو روی تمام تصویرها قرار می‌گیرد." : burnCaptions ? "زیرنویس روی تصویر تثبیت می‌شود." : "صداهای انتخاب‌شده میکس می‌شوند.");
+    let finalResult = await ffmpeg.exec(buildFinalArgs(burnCaptions));
 
     if (finalResult !== 0 && burnCaptions) {
       addRenderLog("موتور مرورگر از تثبیت زیرنویس پشتیبانی نکرد؛ خروجی بدون زیرنویس تصویری دوباره ساخته می‌شود.");
       burnCaptions = false;
       await ffmpeg.deleteFile(output).catch(() => {});
-      const retryArgs = ["-i", "joined.mp4"];
-      inputIndex = 1;
-      if (state.narration) retryArgs.push("-i", `narration.${extensionOf(state.narration.file, "mp3")}`);
-      if (state.music) retryArgs.push("-stream_loop", "-1", "-i", `music.${extensionOf(state.music.file, "mp3")}`);
-      if (audioLabels.length > 1) retryArgs.push("-filter_complex", filterParts.join(";"));
-      retryArgs.push("-map", "0:v:0", "-map", audioLabels.length > 1 ? "[aout]" : "0:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", settings.audio, "-movflags", "+faststart", "-shortest", output);
-      finalResult = await ffmpeg.exec(retryArgs);
+      finalResult = await ffmpeg.exec(buildFinalArgs(false));
     }
 
-    if (finalResult !== 0) throw new Error("ساخت فایل نهایی کامل نشد. گزارش فنی را بررسی کنید.");
+    if (finalResult !== 0) throw new Error(logoInfo ? "ثبت لوگو روی ویدئو انجام نشد. گزارش فنی را بررسی کنید." : "ساخت فایل نهایی کامل نشد. گزارش فنی را بررسی کنید.");
     updateRenderProgress(0.96, "در حال آماده‌سازی دانلود", "فایل نهایی از حافظه پردازش خوانده می‌شود.");
     const outputData = await ffmpeg.readFile(output);
     const blob = new Blob([outputData.buffer], { type: "video/mp4" });
@@ -1201,7 +1365,7 @@ async function renderVideo() {
     refs.downloadButton.hidden = false;
     refs.closeRenderButton.hidden = false;
     updateRenderProgress(1, "ویدئوی نهایی آماده است", `${formatBytes(blob.size)} · فایل را دانلود و قبل از انتشار یک‌بار بازبینی کنید.`);
-    addRenderLog(burnCaptions ? "خروجی همراه زیرنویس تصویری ساخته شد." : "خروجی آماده شد.");
+    addRenderLog(logoInfo ? `خروجی با لوگو${burnCaptions ? " و زیرنویس تصویری" : ""} ساخته شد.` : burnCaptions ? "خروجی همراه زیرنویس تصویری ساخته شد." : "خروجی آماده شد.");
     await cleanupFiles(ffmpeg, workingFiles);
   } catch (error) {
     if (error.name === "AbortError" || state.cancelled) {
@@ -1312,6 +1476,21 @@ function wireEvents() {
   refs.narrationInput.addEventListener("change", (event) => setAudio("narration", event.target.files[0]));
   refs.musicInput.addEventListener("change", (event) => setAudio("music", event.target.files[0]));
   refs.captionInput.addEventListener("change", (event) => setCaption(event.target.files[0]));
+  $("#chooseLogo").addEventListener("click", () => refs.logoInput.click());
+  $("#previewChooseLogo").addEventListener("click", () => refs.previewLogoInput.click());
+  refs.logoInput.addEventListener("change", (event) => setLogo(event.target.files[0]));
+  refs.previewLogoInput.addEventListener("change", (event) => setLogo(event.target.files[0]));
+  $("#removeLogo").addEventListener("click", () => removeLogo());
+  [refs.logoPosition, refs.previewLogoPosition].forEach((select) => select.addEventListener("change", () => {
+    state.logoStyle.position = select.value;
+    applyLogoStyle();
+    saveDraft();
+  }));
+  [refs.logoSize, refs.previewLogoSize].forEach((input) => input.addEventListener("input", () => {
+    state.logoStyle.sizePercent = Number(input.value);
+    applyLogoStyle();
+    saveDraft();
+  }));
   $$('[data-remove="narration"], [data-remove="music"], [data-remove="caption"]').forEach((button) => {
     button.addEventListener("click", () => removeMedia(button.dataset.remove));
   });
@@ -1390,6 +1569,7 @@ function wireEvents() {
 
   refs.projectTitle.addEventListener("change", saveDraft);
   [refs.outputName, refs.resolution, refs.fitMode, refs.quality, $("#burnCaptions")].forEach((input) => input.addEventListener("change", () => {
+    if (input === refs.fitMode) updateLogoStage();
     updateSummary();
     saveDraft();
   }));

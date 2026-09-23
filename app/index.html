@@ -10,7 +10,7 @@
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.png" type="image/png" sizes="48x48" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-    <link rel="stylesheet" href="./styles.css?v=1.4" />
+    <link rel="stylesheet" href="./styles.css?v=1.6" />
   </head>
   <body>
     <a class="skip-link" href="#workspace">رفتن به محیط تدوین</a>
@@ -60,6 +60,10 @@
           <a class="step-link" href="#captionStep" data-step="captionStep">
             <span class="step-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h3M14 10h3M7 14h5M14 14h3"/></svg></span>
             <span><strong>زیرنویس</strong><small>فایل SRT انگلیسی</small></span>
+          </a>
+          <a class="step-link" href="#logoStep" data-step="logoStep">
+            <span class="step-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m4 17 5-5 3 3 3-4 5 6"/></svg></span>
+            <span><strong>واترمارک</strong><small>لوگو و جایگاه</small></span>
           </a>
           <a class="step-link" href="#exportStep" data-step="exportStep">
             <span class="step-icon"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 14v7h14v-7"/></svg></span>
@@ -237,6 +241,27 @@
           </div>
         </section>
 
+        <section id="logoStep" class="workspace-section" aria-labelledby="logoHeading">
+          <div class="section-heading compact"><div><h2 id="logoHeading">واترمارک ویدئو</h2><p>لوگو را اضافه کنید و جایگاه و اندازه‌اش را روی قاب ببینید.</p></div></div>
+          <div class="watermark-studio">
+            <div class="watermark-stage" aria-label="پیش‌نمایش محل لوگو روی قاب عمودی">
+              <video id="logoStageVideo" class="watermark-stage-frame" muted playsinline preload="metadata" aria-label="فریم اولین کلیپ" hidden></video>
+              <span id="logoStagePlaceholder">پیش‌نمایش قاب ویدئو</span>
+              <img id="logoStageMark" class="mix-preview-logo" alt="پیش‌نمایش واترمارک" hidden />
+            </div>
+            <div class="logo-panel">
+              <div class="logo-panel-head"><div><h3>لوگو روی ویدئو</h3><p>واترمارک ثابت روی تمام کلیپ‌ها؛ برای پس‌زمینهٔ شفاف از PNG یا WebP استفاده کنید.</p></div><button class="small-action neutral" id="chooseLogo" type="button">انتخاب لوگو</button></div>
+              <input id="logoInput" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden />
+              <div class="logo-file-row"><div class="file-identity"><strong id="logoName" dir="ltr">فایلی انتخاب نشده</strong><span id="logoMeta">PNG، JPG یا WebP</span></div><button class="remove-media" id="removeLogo" type="button" hidden>حذف</button></div>
+              <div class="logo-controls">
+                <label for="logoPosition"><span>جایگاه لوگو</span><select id="logoPosition"><option value="top-right">بالا راست</option><option value="top-center">بالا وسط</option><option value="top-left">بالا چپ</option><option value="center-right">وسط راست</option><option value="center">مرکز</option><option value="center-left">وسط چپ</option><option value="bottom-right">پایین راست</option><option value="bottom-center">پایین وسط</option><option value="bottom-left">پایین چپ</option></select></label>
+                <label for="logoSize"><span>اندازه نسبت به عرض تصویر</span><div class="range-with-value"><input id="logoSize" type="range" min="5" max="35" step="1" value="18" /><output id="logoSizeValue">۱۸٪</output></div></label>
+              </div>
+              <p class="logo-helper">تغییرات این بخش در پیش‌نمایش ترکیب و فایل خروجی نیز اعمال می‌شوند.</p>
+            </div>
+          </div>
+        </section>
+
         <section id="exportStep" class="workspace-section export-section" aria-labelledby="exportHeading">
           <div class="section-heading compact">
             <div>
@@ -320,10 +345,18 @@
       <div class="mix-preview-layout">
         <div class="mix-preview-stage" id="mixPreviewStage">
           <video id="mixPreviewVideo" playsinline preload="metadata"></video>
+          <img id="mixPreviewLogo" class="mix-preview-logo" alt="لوگوی انتخاب‌شده" hidden />
           <div class="mix-caption-layer"><p class="styled-caption" id="mixPreviewCaption" hidden></p></div>
           <span class="preview-clip-name" id="mixPreviewClipName" dir="ltr"></span>
         </div>
         <div class="mix-preview-panel">
+          <div class="preview-watermark-controls" dir="rtl">
+            <div class="preview-watermark-head"><strong>واترمارک</strong><button id="previewChooseLogo" type="button">انتخاب لوگو</button></div>
+            <input id="previewLogoInput" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden />
+            <p id="previewLogoName">هنوز لوگویی انتخاب نشده است.</p>
+            <div class="preview-caption-row"><label for="previewLogoPosition">جایگاه</label><select id="previewLogoPosition"><option value="top-right">بالا راست</option><option value="top-center">بالا وسط</option><option value="top-left">بالا چپ</option><option value="center-right">وسط راست</option><option value="center">مرکز</option><option value="center-left">وسط چپ</option><option value="bottom-right">پایین راست</option><option value="bottom-center">پایین وسط</option><option value="bottom-left">پایین چپ</option></select></div>
+            <div class="preview-caption-row"><label for="previewLogoSize">اندازه</label><input id="previewLogoSize" type="range" min="5" max="35" step="1" value="18" /><output id="previewLogoSizeValue">۱۸٪</output></div>
+          </div>
           <button class="mix-play-button" id="mixPreviewPlay" type="button" aria-label="پخش پیش‌نمایش">
             <svg class="play-icon" viewBox="0 0 24 24"><path d="m9 6 9 6-9 6V6Z"/></svg>
             <svg class="pause-icon" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>
@@ -359,6 +392,6 @@
 
     <input id="projectImportInput" type="file" accept="application/json,.json" hidden />
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script defer src="./app.js?v=1.4"></script>
+    <script defer src="./app.js?v=1.6"></script>
   </body>
 </html>
