@@ -1,4 +1,4 @@
-const CACHE_NAME = "flow2short-studio-v4";
+const CACHE_NAME = "flow2short-studio-v5";
 const APP_ASSETS = [
   "./",
   "./index.html",

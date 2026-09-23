@@ -13,6 +13,7 @@ const state = {
     fontSize: 58,
     position: "bottom",
     color: "#ffdc42",
+    offsetMs: 0,
   },
   ffmpeg: null,
   ffmpegLoaded: false,
@@ -51,6 +52,8 @@ const refs = {
   narrationInput: $("#narrationInput"),
   musicInput: $("#musicInput"),
   captionInput: $("#captionInput"),
+  captionOffsetMs: $("#captionOffsetMs"),
+  captionSyncStatus: $("#captionSyncStatus"),
   captionStylePreview: $("#captionStylePreview"),
   captionFontSize: $("#captionFontSize"),
   captionPosition: $("#captionPosition"),
@@ -163,11 +166,11 @@ function hexToAssColor(hex, alpha = "00") {
 }
 
 function formatAssTime(seconds) {
-  const safe = Math.max(0, Number(seconds) || 0);
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const secs = Math.floor(safe % 60);
-  const centiseconds = Math.floor((safe % 1) * 100);
+  const total = Math.max(0, Math.round((Number(seconds) || 0) * 100));
+  const hours = Math.floor(total / 360000);
+  const minutes = Math.floor((total % 360000) / 6000);
+  const secs = Math.floor((total % 6000) / 100);
+  const centiseconds = total % 100;
   return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}.${String(centiseconds).padStart(2, "0")}`;
 }
 
@@ -184,14 +187,22 @@ function buildAssCaptions(width, height) {
   const outline = hexToAssColor(outlineBase, outlineAlpha);
   const background = hexToAssColor(preset.background || "#07111f", preset.borderStyle === 3 ? "28" : "80");
   const outlineWidth = preset.borderStyle === 3 ? Math.max(7, preset.outline) : preset.outline;
+  const isWordByWord = state.caption.wordByWord;
   const events = state.caption.cues.map((cue) => {
+    const start = Math.max(0, cue.start + state.captionStyle.offsetMs / 1000);
+    const end = cue.end + state.captionStyle.offsetMs / 1000;
+    if (end <= start) return "";
+    const popDuration = Math.min(100, Math.max(0, Math.round((end - start) * 500)));
+    const entrance = isWordByWord
+      ? `{\\fscx84\\fscy84\\t(0,${popDuration},\\fscx100\\fscy100)}`
+      : "{\\fad(120,120)}";
     const text = cue.text
       .replace(/\\/g, "\\\\")
       .replace(/{/g, "\\{")
       .replace(/}/g, "\\}")
       .replace(/\n/g, "\\N");
-    return `Dialogue: 0,${formatAssTime(cue.start)},${formatAssTime(cue.end)},Flow2Short,,0,0,0,,{\\fad(120,120)}${text}`;
-  }).join("\n");
+    return `Dialogue: 0,${formatAssTime(start)},${formatAssTime(end)},Flow2Short,,0,0,0,,${entrance}${text}`;
+  }).filter(Boolean).join("\n");
   return `[Script Info]
 ScriptType: v4.00+
 PlayResX: ${width}
@@ -471,9 +482,25 @@ function previewSegmentAt(time) {
 }
 
 function updatePreviewCaption(time) {
-  const cue = $("#burnCaptions").checked
-    ? state.caption?.cues?.find((item) => time >= item.start && time < item.end)
-    : null;
+  const offset = state.captionStyle.offsetMs / 1000;
+  const index = $("#burnCaptions").checked
+    ? state.caption?.cues?.findIndex((item) => time >= item.start + offset && time < item.end + offset) ?? -1
+    : -1;
+  const cue = index >= 0 ? state.caption.cues[index] : null;
+  if (cue && refs.mixPreviewCaption.dataset.cue !== String(index)) {
+    refs.mixPreviewCaption.dataset.cue = String(index);
+    if (state.caption.wordByWord) {
+      refs.mixPreviewCaption.classList.remove("word-pop");
+      void refs.mixPreviewCaption.offsetWidth;
+      refs.mixPreviewCaption.classList.add("word-pop");
+    } else {
+      refs.mixPreviewCaption.classList.remove("word-pop");
+    }
+  }
+  if (!cue) {
+    refs.mixPreviewCaption.dataset.cue = "";
+    refs.mixPreviewCaption.classList.remove("word-pop");
+  }
   refs.mixPreviewCaption.hidden = !cue;
   refs.mixPreviewCaption.textContent = cue?.text || "";
 }
@@ -720,11 +747,13 @@ async function setCaption(file) {
   try {
     const cues = parseSrt(await file.text());
     if (!cues.length) throw new Error("زمان‌بندی معتبری داخل فایل SRT پیدا نشد.");
-    state.caption = { file, cues };
+    const wordByWord = cues.every((cue) => !/\s/u.test(cue.text.trim()));
+    state.caption = { file, cues, wordByWord };
     $("#captionName").textContent = file.name;
-    $("#captionMeta").textContent = `${toFaDigits(cues.length)} زیرنویس · ${formatBytes(file.size)}`;
+    $("#captionMeta").textContent = `${toFaDigits(cues.length)} ${wordByWord ? "کلمه · نمایش کلمه‌به‌کلمه" : "زیرنویس"} · ${formatBytes(file.size)}`;
     $('[data-remove="caption"]').hidden = false;
     refs.captionStylePreview.textContent = cues[0].text;
+    updatePreviewCaption(state.preview.globalTime);
     saveDraft();
   } catch (error) {
     refs.captionInput.value = "";
@@ -736,10 +765,13 @@ function removeMedia(kind) {
   if (state[kind]?.url) URL.revokeObjectURL(state[kind].url);
   state[kind] = null;
   $(`#${kind}Name`).textContent = "فایلی انتخاب نشده";
-  $(`#${kind}Meta`).textContent = kind === "caption" ? "SRT با زمان‌بندی نهایی" : "MP3، WAV یا M4A";
+  $(`#${kind}Meta`).textContent = kind === "caption" ? "SRT کلمه‌به‌کلمه یا معمولی" : "MP3، WAV یا M4A";
   $(`[data-remove="${kind}"]`).hidden = true;
   $(`#${kind}Input`).value = "";
-  if (kind === "caption") refs.captionStylePreview.textContent = "YOUR NEXT BIG IDEA";
+  if (kind === "caption") {
+    refs.captionStylePreview.textContent = "YOUR NEXT BIG IDEA";
+    updatePreviewCaption(state.preview.globalTime);
+  }
   updateSummary();
   saveDraft();
 }
@@ -805,6 +837,7 @@ async function importProject(file) {
     $("#burnCaptions").checked = recipe.project.caption?.burn ?? true;
     state.captionStyle = { ...state.captionStyle, ...(recipe.project.captionStyle || {}) };
     applyCaptionStyle();
+    setCaptionOffset(state.captionStyle.offsetMs, false);
     syncGlobalRanges();
     updateSummary();
     localStorage.setItem("flow2short-imported-recipe", JSON.stringify(recipe));
@@ -843,6 +876,19 @@ function loadPreferences() {
     localStorage.removeItem("flow2short-draft");
   }
   applyCaptionStyle();
+  setCaptionOffset(state.captionStyle.offsetMs, false);
+}
+
+function setCaptionOffset(value, persist = true) {
+  const number = Number(value);
+  const offset = Number.isFinite(number) ? Math.max(-60000, Math.min(60000, Math.round(number / 10) * 10)) : 0;
+  state.captionStyle.offsetMs = offset;
+  refs.captionOffsetMs.value = offset;
+  refs.captionSyncStatus.textContent = offset === 0
+    ? "بدون جابه‌جایی زمانی"
+    : `${toFaDigits(Math.abs(offset))} میلی‌ثانیه ${offset < 0 ? "زودتر" : "دیرتر"}`;
+  updatePreviewCaption(state.preview.globalTime);
+  if (persist) saveDraft();
 }
 
 function syncGlobalRanges() {
@@ -1236,6 +1282,11 @@ function wireEvents() {
     applyCaptionStyle();
     saveDraft();
   });
+  refs.captionOffsetMs.addEventListener("change", () => setCaptionOffset(refs.captionOffsetMs.value));
+  $$('[data-caption-shift]').forEach((button) => {
+    button.addEventListener("click", () => setCaptionOffset(state.captionStyle.offsetMs + Number(button.dataset.captionShift)));
+  });
+  $("#captionOffsetReset").addEventListener("click", () => setCaptionOffset(0));
   $("#burnCaptions").addEventListener("change", () => {
     updatePreviewCaption(state.preview.globalTime);
     saveDraft();

@@ -169,14 +169,14 @@
           <div class="section-heading compact">
             <div>
               <h2 id="captionHeading">زیرنویس انگلیسی</h2>
-              <p>زیرنویس را داخل تصویر تثبیت کنید یا فایل SRT را جداگانه نگه دارید.</p>
+              <p>فایل SRT کلمه‌به‌کلمه را بارگذاری کنید و زمان و ظاهر آن را تنظیم کنید.</p>
             </div>
           </div>
 
           <article class="caption-panel">
             <div class="caption-file">
               <span class="media-type-icon dark"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h3M14 10h3M7 14h5M14 14h3"/></svg></span>
-              <div class="file-identity"><strong id="captionName" dir="ltr">فایلی انتخاب نشده</strong><span id="captionMeta">SRT با زمان‌بندی نهایی</span></div>
+              <div class="file-identity"><strong id="captionName" dir="ltr">فایلی انتخاب نشده</strong><span id="captionMeta">SRT کلمه‌به‌کلمه یا معمولی</span></div>
             </div>
             <input id="captionInput" type="file" accept=".srt,text/plain,application/x-subrip" hidden />
             <div class="caption-actions">
@@ -213,6 +213,16 @@
                 <label><span>اندازه متن</span><div class="range-with-value"><input id="captionFontSize" type="range" min="36" max="84" value="58" /><output id="captionFontSizeValue">۵۸</output></div></label>
                 <label><span>جایگاه</span><select id="captionPosition"><option value="bottom">پایین — پیشنهادی</option><option value="center">وسط</option><option value="top">بالا</option></select></label>
                 <label><span>رنگ اصلی</span><input class="caption-color" id="captionColor" type="color" value="#ffdc42" aria-label="رنگ اصلی زیرنویس" /></label>
+              </div>
+              <div class="caption-sync">
+                <div class="caption-sync-heading"><strong>هماهنگی زیرنویس با صدا</strong><span>مقدار منفی: زودتر · مقدار مثبت: دیرتر</span></div>
+                <div class="caption-sync-controls" dir="ltr">
+                  <button type="button" data-caption-shift="-100" aria-label="زیرنویس ۱۰۰ میلی‌ثانیه زودتر">−100</button>
+                  <label for="captionOffsetMs"><input id="captionOffsetMs" type="number" min="-60000" max="60000" step="10" value="0" inputmode="numeric" aria-label="جابه‌جایی زیرنویس به میلی‌ثانیه" /><span>ms</span></label>
+                  <button type="button" data-caption-shift="100" aria-label="زیرنویس ۱۰۰ میلی‌ثانیه دیرتر">+100</button>
+                  <button type="button" id="captionOffsetReset" aria-label="بازنشانی زمان زیرنویس">بازنشانی</button>
+                </div>
+                <p><span id="captionSyncStatus" aria-live="polite">بدون جابه‌جایی زمانی</span> · دقت خروجی ۱۰ میلی‌ثانیه</p>
               </div>
             </div>
           </div>
