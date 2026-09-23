@@ -8,12 +8,30 @@ const state = {
   narration: null,
   music: null,
   caption: null,
+  captionStyle: {
+    preset: "impact",
+    fontSize: 58,
+    position: "bottom",
+    color: "#ffdc42",
+  },
   ffmpeg: null,
   ffmpegLoaded: false,
   rendering: false,
   cancelled: false,
   outputUrl: null,
   deferredInstallPrompt: null,
+  preview: {
+    segments: [],
+    total: 0,
+    index: -1,
+    globalTime: 0,
+    playing: false,
+    frame: 0,
+    loadToken: 0,
+    audioContext: null,
+    audioConnected: false,
+    gains: null,
+  },
   settings: {
     autosave: true,
     leaveWarning: true,
@@ -33,6 +51,22 @@ const refs = {
   narrationInput: $("#narrationInput"),
   musicInput: $("#musicInput"),
   captionInput: $("#captionInput"),
+  captionStylePreview: $("#captionStylePreview"),
+  captionFontSize: $("#captionFontSize"),
+  captionPosition: $("#captionPosition"),
+  captionColor: $("#captionColor"),
+  mixPreviewButton: $("#mixPreviewButton"),
+  mixPreviewDialog: $("#mixPreviewDialog"),
+  mixPreviewVideo: $("#mixPreviewVideo"),
+  mixPreviewNarration: $("#mixPreviewNarration"),
+  mixPreviewMusic: $("#mixPreviewMusic"),
+  mixPreviewCaption: $("#mixPreviewCaption"),
+  mixPreviewStage: $("#mixPreviewStage"),
+  mixPreviewPlay: $("#mixPreviewPlay"),
+  mixPreviewSeek: $("#mixPreviewSeek"),
+  mixPreviewCurrent: $("#mixPreviewCurrent"),
+  mixPreviewTotal: $("#mixPreviewTotal"),
+  mixPreviewClipName: $("#mixPreviewClipName"),
   renderButton: $("#renderButton"),
   totalDuration: $("#totalDuration"),
   clipCount: $("#clipCount"),
@@ -55,6 +89,15 @@ const refs = {
 };
 
 const toFaDigits = (value) => String(value).replace(/\d/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[digit]);
+
+const CAPTION_PRESETS = {
+  impact: { name: "بولد پاپ", color: "#ffdc42", outline: 5, shadow: 1, bold: true, borderStyle: 1 },
+  clean: { name: "تمیز", color: "#ffffff", outline: 2.5, shadow: 1, bold: true, borderStyle: 1 },
+  boxed: { name: "باکس", color: "#ffffff", outline: 0, shadow: 0, bold: true, borderStyle: 3, background: "#10213c" },
+  mint: { name: "مینت", color: "#35d3a0", textColor: "#10213c", outline: 0, shadow: 0, bold: true, borderStyle: 3, background: "#35d3a0" },
+  neon: { name: "نئون", color: "#ffffff", outline: 3, shadow: 2, bold: true, borderStyle: 1, outlineColor: "#12a875" },
+  minimal: { name: "مینیمال", color: "#ffffff", outline: 1, shadow: 0, bold: false, borderStyle: 1 },
+};
 
 function formatTime(seconds, persian = true) {
   const safe = Math.max(0, Number(seconds) || 0);
@@ -87,6 +130,85 @@ function safeFileName(value) {
     .trim() || "YouTube-Short-Final";
 }
 
+function parseSrtTime(value) {
+  const match = String(value).trim().match(/(\d+):(\d{2}):(\d{2})[,.](\d{3})/);
+  if (!match) return NaN;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(match[4]) / 1000;
+}
+
+function parseSrt(text) {
+  return String(text)
+    .replace(/^\uFEFF/, "")
+    .replace(/\r/g, "")
+    .trim()
+    .split(/\n{2,}/)
+    .map((block) => {
+      const lines = block.split("\n").filter(Boolean);
+      const timingIndex = lines.findIndex((line) => line.includes("-->"));
+      if (timingIndex < 0) return null;
+      const [startText, endText] = lines[timingIndex].split("-->");
+      const start = parseSrtTime(startText);
+      const end = parseSrtTime(endText);
+      const cueText = lines.slice(timingIndex + 1).join("\n").replace(/<[^>]+>/g, "").trim();
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !cueText) return null;
+      return { start, end, text: cueText };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start);
+}
+
+function hexToAssColor(hex, alpha = "00") {
+  const value = String(hex || "#ffffff").replace("#", "").padEnd(6, "f").slice(0, 6);
+  return `&H${alpha}${value.slice(4, 6)}${value.slice(2, 4)}${value.slice(0, 2)}`.toUpperCase();
+}
+
+function formatAssTime(seconds) {
+  const safe = Math.max(0, Number(seconds) || 0);
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const secs = Math.floor(safe % 60);
+  const centiseconds = Math.floor((safe % 1) * 100);
+  return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}.${String(centiseconds).padStart(2, "0")}`;
+}
+
+function buildAssCaptions(width, height) {
+  const preset = CAPTION_PRESETS[state.captionStyle.preset] || CAPTION_PRESETS.clean;
+  const alignment = { top: 8, center: 5, bottom: 2 }[state.captionStyle.position] || 2;
+  const margin = Math.round(height * (state.captionStyle.position === "bottom" ? 0.115 : 0.08));
+  const fontSize = Math.max(28, Math.round(state.captionStyle.fontSize * (width / 1080)));
+  const primary = hexToAssColor(preset.textColor || state.captionStyle.color || preset.color);
+  const outlineBase = preset.borderStyle === 3
+    ? (state.captionStyle.preset === "mint" ? state.captionStyle.color : preset.background)
+    : (preset.outlineColor || "#07111f");
+  const outlineAlpha = preset.borderStyle === 3 ? "18" : (state.captionStyle.preset === "minimal" ? "80" : "20");
+  const outline = hexToAssColor(outlineBase, outlineAlpha);
+  const background = hexToAssColor(preset.background || "#07111f", preset.borderStyle === 3 ? "28" : "80");
+  const outlineWidth = preset.borderStyle === 3 ? Math.max(7, preset.outline) : preset.outline;
+  const events = state.caption.cues.map((cue) => {
+    const text = cue.text
+      .replace(/\\/g, "\\\\")
+      .replace(/{/g, "\\{")
+      .replace(/}/g, "\\}")
+      .replace(/\n/g, "\\N");
+    return `Dialogue: 0,${formatAssTime(cue.start)},${formatAssTime(cue.end)},Flow2Short,,0,0,0,,{\\fad(120,120)}${text}`;
+  }).join("\n");
+  return `[Script Info]
+ScriptType: v4.00+
+PlayResX: ${width}
+PlayResY: ${height}
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Flow2Short,DejaVu Sans,${fontSize},${primary},${primary},${outline},${background},${preset.bold ? -1 : 0},0,0,0,100,100,0,0,${preset.borderStyle},${outlineWidth},${preset.shadow},${alignment},70,70,${margin},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+${events}
+`;
+}
+
 function uid() {
   return globalThis.crypto?.randomUUID?.() || `clip-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -104,6 +226,42 @@ function setRangeVisual(input) {
   const max = Number(input.max || 100);
   const progress = ((Number(input.value) - min) / (max - min)) * 100;
   input.style.setProperty("--range-progress", `${progress}%`);
+}
+
+function applyCaptionStyle() {
+  if (!CAPTION_PRESETS[state.captionStyle.preset]) state.captionStyle.preset = "clean";
+  state.captionStyle.fontSize = Math.max(36, Math.min(84, Number(state.captionStyle.fontSize) || 58));
+  if (!["top", "center", "bottom"].includes(state.captionStyle.position)) state.captionStyle.position = "bottom";
+  if (!/^#[0-9a-f]{6}$/i.test(state.captionStyle.color || "")) state.captionStyle.color = CAPTION_PRESETS[state.captionStyle.preset].color;
+  const preset = CAPTION_PRESETS[state.captionStyle.preset] || CAPTION_PRESETS.clean;
+  const elements = [refs.captionStylePreview, refs.mixPreviewCaption];
+  elements.forEach((element) => {
+    element.dataset.preset = state.captionStyle.preset;
+    element.style.setProperty("--caption-color", state.captionStyle.color || preset.color);
+    element.style.setProperty("--caption-font-px", `${Math.round(state.captionStyle.fontSize * 0.34)}px`);
+  });
+  refs.captionStylePreview.parentElement.dataset.position = state.captionStyle.position;
+  refs.mixPreviewStage.dataset.position = state.captionStyle.position;
+  refs.captionFontSize.value = state.captionStyle.fontSize;
+  refs.captionPosition.value = state.captionStyle.position;
+  refs.captionColor.value = state.captionStyle.color || preset.color;
+  $("#captionFontSizeValue").textContent = toFaDigits(state.captionStyle.fontSize);
+  $("#captionPresetName").textContent = preset.name;
+  $$('[data-caption-preset]').forEach((button) => {
+    const selected = button.dataset.captionPreset === state.captionStyle.preset;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-checked", String(selected));
+  });
+  setRangeVisual(refs.captionFontSize);
+}
+
+function setCaptionPreset(name) {
+  const preset = CAPTION_PRESETS[name];
+  if (!preset) return;
+  state.captionStyle.preset = name;
+  state.captionStyle.color = preset.color;
+  applyCaptionStyle();
+  saveDraft();
 }
 
 function getMediaDuration(file) {
@@ -249,24 +407,30 @@ function updateSummary() {
   const total = state.clips.reduce((sum, clip) => sum + clipDuration(clip), 0);
   refs.totalDuration.textContent = formatTime(total);
   refs.clipCount.textContent = toFaDigits(state.clips.length);
-  refs.renderButton.disabled = state.clips.length === 0 || state.rendering;
+  refs.mixPreviewButton.disabled = state.clips.length === 0 || state.rendering;
+  refs.renderButton.disabled = state.clips.length === 0 || state.rendering || location.protocol === "file:";
+  refs.renderButton.title = location.protocol === "file:" ? "برای ساخت خروجی، برنامه را با Start Flow2Short.command باز کنید." : "";
   refs.outputSummary.textContent = refs.resolution.value === "720" ? "۷۲۰ × ۱۲۸۰" : "۱۰۸۰ × ۱۹۲۰";
   updateDeviceReadiness();
 }
 
 function updateDeviceReadiness() {
   const box = $("#deviceReadiness");
+  const title = $("strong", box);
   const hint = $("#deviceHint");
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const totalBytes = state.clips.reduce((sum, clip) => sum + clip.file.size, 0) + (state.narration?.file.size || 0) + (state.music?.file.size || 0);
   if (isIOS && totalBytes > 220 * 1024 * 1024) {
     box.classList.add("is-mobile-warning");
+    title.textContent = "پروژه برای موبایل سنگین است";
     hint.textContent = "حجم پروژه برای آیفون سنگین است؛ پروژه را ذخیره و خروجی را روی مک یا ویندوز بسازید.";
   } else if (location.protocol === "file:") {
     box.classList.add("is-mobile-warning");
-    hint.textContent = "برای ساخت خروجی، برنامه را با لانچر دسکتاپ یا نسخه نصب‌شده PWA باز کنید.";
+    title.textContent = "حالت نمایش — خروجی غیرفعال است";
+    hint.textContent = "برای ساخت خروجی، Start Flow2Short.command را اجرا کنید تا آدرس با http باز شود.";
   } else {
     box.classList.remove("is-mobile-warning");
+    title.textContent = "آماده برای پردازش محلی";
     hint.textContent = `حدود ${formatBytes(totalBytes)} ورودی؛ خروجی بدون ارسال فایل‌ها به اینترنت ساخته می‌شود.`;
   }
 }
@@ -286,6 +450,204 @@ function closePreview() {
   refs.clipPreview.removeAttribute("src");
   refs.clipPreview.load();
   refs.previewStrip.hidden = true;
+}
+
+function buildPreviewSegments() {
+  let offset = 0;
+  state.preview.segments = state.clips.map((clip, index) => {
+    const duration = clipDuration(clip);
+    const segment = { clip, index, start: offset, end: offset + duration, duration };
+    offset += duration;
+    return segment;
+  });
+  state.preview.total = offset;
+  return state.preview.segments;
+}
+
+function previewSegmentAt(time) {
+  const safeTime = Math.max(0, Math.min(Number(time) || 0, Math.max(0, state.preview.total - 0.001)));
+  return state.preview.segments.find((segment) => safeTime >= segment.start && safeTime < segment.end)
+    || state.preview.segments.at(-1);
+}
+
+function updatePreviewCaption(time) {
+  const cue = $("#burnCaptions").checked
+    ? state.caption?.cues?.find((item) => time >= item.start && time < item.end)
+    : null;
+  refs.mixPreviewCaption.hidden = !cue;
+  refs.mixPreviewCaption.textContent = cue?.text || "";
+}
+
+function updateMixPreviewUI(time) {
+  const safeTime = Math.max(0, Math.min(Number(time) || 0, state.preview.total));
+  state.preview.globalTime = safeTime;
+  refs.mixPreviewSeek.value = safeTime;
+  refs.mixPreviewCurrent.textContent = formatTime(safeTime);
+  refs.mixPreviewTotal.textContent = formatTime(state.preview.total);
+  setRangeVisual(refs.mixPreviewSeek);
+  updatePreviewCaption(safeTime);
+}
+
+function ensurePreviewAudioGraph() {
+  if (state.preview.audioConnected) return state.preview.audioContext;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  const context = new AudioContextClass();
+  const videoGain = context.createGain();
+  const narrationGain = context.createGain();
+  const musicGain = context.createGain();
+  context.createMediaElementSource(refs.mixPreviewVideo).connect(videoGain).connect(context.destination);
+  context.createMediaElementSource(refs.mixPreviewNarration).connect(narrationGain).connect(context.destination);
+  context.createMediaElementSource(refs.mixPreviewMusic).connect(musicGain).connect(context.destination);
+  refs.mixPreviewVideo.volume = 1;
+  refs.mixPreviewNarration.volume = 1;
+  refs.mixPreviewMusic.volume = 1;
+  state.preview.audioContext = context;
+  state.preview.gains = { video: videoGain, narration: narrationGain, music: musicGain };
+  state.preview.audioConnected = true;
+  return context;
+}
+
+function syncPreviewGains(segment) {
+  if (!state.preview.gains) {
+    refs.mixPreviewVideo.volume = Math.min(1, segment.clip.volume / 100);
+    refs.mixPreviewNarration.volume = Math.min(1, Number($("#narrationVolume").value) / 100);
+    refs.mixPreviewMusic.volume = Math.min(1, Number($("#musicVolume").value) / 100);
+    return;
+  }
+  const now = state.preview.audioContext.currentTime;
+  state.preview.gains.video.gain.setTargetAtTime(segment.clip.volume / 100, now, 0.015);
+  state.preview.gains.narration.gain.setTargetAtTime(Number($("#narrationVolume").value) / 100, now, 0.015);
+  state.preview.gains.music.gain.setTargetAtTime(Number($("#musicVolume").value) / 100, now, 0.015);
+}
+
+function syncPreviewAudio(time, shouldPlay) {
+  const tracks = [
+    { element: refs.mixPreviewNarration, media: state.narration, loop: false },
+    { element: refs.mixPreviewMusic, media: state.music, loop: true },
+  ];
+  tracks.forEach(({ element, media, loop }) => {
+    if (!media?.url || !media.duration) {
+      element.pause();
+      return;
+    }
+    if (!loop && time >= media.duration) {
+      element.pause();
+      return;
+    }
+    const target = loop ? time % media.duration : time;
+    try {
+      if (Math.abs((element.currentTime || 0) - target) > 0.22) element.currentTime = target;
+    } catch { /* metadata is still loading */ }
+    if (shouldPlay) element.play().catch(() => {});
+    else element.pause();
+  });
+}
+
+function waitForMetadata(media) {
+  if (media.readyState >= 1) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    media.addEventListener("loadedmetadata", resolve, { once: true });
+    media.addEventListener("error", () => reject(new Error("پخش این کلیپ در مرورگر ممکن نیست.")), { once: true });
+  });
+}
+
+async function loadMixPreviewAt(time, shouldPlay = false) {
+  if (!state.preview.segments.length) return;
+  const safeTime = Math.max(0, Math.min(Number(time) || 0, Math.max(0, state.preview.total - 0.001)));
+  const segment = previewSegmentAt(safeTime);
+  if (!segment) return;
+  const token = ++state.preview.loadToken;
+  const clipChanged = state.preview.index !== segment.index || refs.mixPreviewVideo.src !== segment.clip.url;
+  state.preview.index = segment.index;
+  if (clipChanged) {
+    refs.mixPreviewVideo.pause();
+    refs.mixPreviewVideo.src = segment.clip.url;
+    refs.mixPreviewVideo.load();
+    await waitForMetadata(refs.mixPreviewVideo);
+    if (token !== state.preview.loadToken) return;
+  }
+  const clipTime = segment.clip.start + (safeTime - segment.start);
+  if (Math.abs(refs.mixPreviewVideo.currentTime - clipTime) > 0.08) refs.mixPreviewVideo.currentTime = clipTime;
+  refs.mixPreviewClipName.textContent = segment.clip.name;
+  syncPreviewGains(segment);
+  syncPreviewAudio(safeTime, shouldPlay);
+  updateMixPreviewUI(safeTime);
+  if (shouldPlay) await refs.mixPreviewVideo.play();
+}
+
+function pauseMixPreview() {
+  state.preview.playing = false;
+  cancelAnimationFrame(state.preview.frame);
+  refs.mixPreviewVideo.pause();
+  syncPreviewAudio(state.preview.globalTime, false);
+  refs.mixPreviewPlay.classList.remove("is-playing");
+  refs.mixPreviewPlay.setAttribute("aria-label", "پخش پیش‌نمایش");
+}
+
+function runMixPreviewFrame() {
+  if (!state.preview.playing) return;
+  const segment = state.preview.segments[state.preview.index];
+  if (!segment) return pauseMixPreview();
+  const time = segment.start + Math.max(0, refs.mixPreviewVideo.currentTime - segment.clip.start);
+  if (time >= segment.end - 0.025) {
+    const next = state.preview.segments[segment.index + 1];
+    if (!next) {
+      updateMixPreviewUI(state.preview.total);
+      pauseMixPreview();
+      return;
+    }
+    loadMixPreviewAt(next.start, true)
+      .then(() => { if (state.preview.playing) state.preview.frame = requestAnimationFrame(runMixPreviewFrame); })
+      .catch((error) => { pauseMixPreview(); showToast(error.message); });
+    return;
+  }
+  updateMixPreviewUI(time);
+  syncPreviewAudio(time, true);
+  state.preview.frame = requestAnimationFrame(runMixPreviewFrame);
+}
+
+async function playMixPreview() {
+  try {
+    const context = ensurePreviewAudioGraph();
+    if (context?.state === "suspended") await context.resume();
+    if (state.preview.globalTime >= state.preview.total - 0.02) state.preview.globalTime = 0;
+    state.preview.playing = true;
+    refs.mixPreviewPlay.classList.add("is-playing");
+    refs.mixPreviewPlay.setAttribute("aria-label", "توقف پیش‌نمایش");
+    await loadMixPreviewAt(state.preview.globalTime, true);
+    cancelAnimationFrame(state.preview.frame);
+    state.preview.frame = requestAnimationFrame(runMixPreviewFrame);
+  } catch (error) {
+    pauseMixPreview();
+    showToast(error.message || "پخش پیش‌نمایش ممکن نشد.");
+  }
+}
+
+async function openMixPreview() {
+  if (!state.clips.length) return;
+  closePreview();
+  buildPreviewSegments();
+  refs.mixPreviewSeek.max = state.preview.total;
+  for (const [element, media] of [[refs.mixPreviewNarration, state.narration], [refs.mixPreviewMusic, state.music]]) {
+    if (media?.url) element.src = media.url;
+    else element.removeAttribute("src");
+    element.load();
+  }
+  refs.mixPreviewVideo.style.objectFit = refs.fitMode.value === "contain" ? "contain" : "cover";
+  state.preview.index = -1;
+  state.preview.globalTime = 0;
+  applyCaptionStyle();
+  refs.mixPreviewDialog.showModal();
+  await loadMixPreviewAt(0, false);
+}
+
+function closeMixPreview() {
+  pauseMixPreview();
+  state.preview.loadToken += 1;
+  refs.mixPreviewVideo.removeAttribute("src");
+  refs.mixPreviewVideo.load();
+  refs.mixPreviewDialog.close();
 }
 
 function moveClip(id, direction) {
@@ -341,7 +703,8 @@ async function setAudio(kind, file) {
   if (!file) return;
   try {
     const duration = await getMediaDuration(file);
-    state[kind] = { file, duration };
+    if (state[kind]?.url) URL.revokeObjectURL(state[kind].url);
+    state[kind] = { file, duration, url: URL.createObjectURL(file) };
     $(`#${kind}Name`).textContent = file.name;
     $(`#${kind}Meta`).textContent = `${formatTime(duration)} · ${formatBytes(file.size)}`;
     $(`[data-remove="${kind}"]`).hidden = false;
@@ -352,21 +715,31 @@ async function setAudio(kind, file) {
   }
 }
 
-function setCaption(file) {
+async function setCaption(file) {
   if (!file) return;
-  state.caption = { file };
-  $("#captionName").textContent = file.name;
-  $("#captionMeta").textContent = `${formatBytes(file.size)} · آماده برای زیرنویس`;
-  $('[data-remove="caption"]').hidden = false;
-  saveDraft();
+  try {
+    const cues = parseSrt(await file.text());
+    if (!cues.length) throw new Error("زمان‌بندی معتبری داخل فایل SRT پیدا نشد.");
+    state.caption = { file, cues };
+    $("#captionName").textContent = file.name;
+    $("#captionMeta").textContent = `${toFaDigits(cues.length)} زیرنویس · ${formatBytes(file.size)}`;
+    $('[data-remove="caption"]').hidden = false;
+    refs.captionStylePreview.textContent = cues[0].text;
+    saveDraft();
+  } catch (error) {
+    refs.captionInput.value = "";
+    showToast(error.message || "خواندن زیرنویس ممکن نشد.");
+  }
 }
 
 function removeMedia(kind) {
+  if (state[kind]?.url) URL.revokeObjectURL(state[kind].url);
   state[kind] = null;
   $(`#${kind}Name`).textContent = "فایلی انتخاب نشده";
   $(`#${kind}Meta`).textContent = kind === "caption" ? "SRT با زمان‌بندی نهایی" : "MP3، WAV یا M4A";
   $(`[data-remove="${kind}"]`).hidden = true;
   $(`#${kind}Input`).value = "";
+  if (kind === "caption") refs.captionStylePreview.textContent = "YOUR NEXT BIG IDEA";
   updateSummary();
   saveDraft();
 }
@@ -389,6 +762,7 @@ function getRecipe() {
       narration: state.narration ? { name: state.narration.file.name, size: state.narration.file.size, volume: Number($("#narrationVolume").value) } : null,
       music: state.music ? { name: state.music.file.name, size: state.music.file.size, volume: Number($("#musicVolume").value) } : null,
       caption: state.caption ? { name: state.caption.file.name, burn: $("#burnCaptions").checked } : null,
+      captionStyle: { ...state.captionStyle },
       output: {
         name: safeFileName(refs.outputName.value),
         resolution: refs.resolution.value,
@@ -429,6 +803,8 @@ async function importProject(file) {
     $("#narrationVolume").value = recipe.project.narration?.volume ?? 100;
     $("#musicVolume").value = recipe.project.music?.volume ?? 18;
     $("#burnCaptions").checked = recipe.project.caption?.burn ?? true;
+    state.captionStyle = { ...state.captionStyle, ...(recipe.project.captionStyle || {}) };
+    applyCaptionStyle();
     syncGlobalRanges();
     updateSummary();
     localStorage.setItem("flow2short-imported-recipe", JSON.stringify(recipe));
@@ -460,10 +836,13 @@ function loadPreferences() {
       refs.quality.value = draft.project.output?.quality || refs.quality.value;
       $("#narrationVolume").value = draft.project.narration?.volume ?? 100;
       $("#musicVolume").value = draft.project.music?.volume ?? 18;
+      $("#burnCaptions").checked = draft.project.caption?.burn ?? true;
+      state.captionStyle = { ...state.captionStyle, ...(draft.project.captionStyle || {}) };
     }
   } catch {
     localStorage.removeItem("flow2short-draft");
   }
+  applyCaptionStyle();
 }
 
 function syncGlobalRanges() {
@@ -657,10 +1036,10 @@ async function renderVideo() {
 
     let burnCaptions = Boolean(state.caption && $("#burnCaptions").checked);
     if (state.caption) {
-      await ffmpeg.writeFile("captions.srt", await fetchFileBytes(state.caption.file));
+      await ffmpeg.writeFile("captions.ass", new TextEncoder().encode(buildAssCaptions(width, height)));
       const subtitleFont = new Uint8Array(await fetch(new URL("./vendor/fonts/DejaVuSans.ttf", APP_BASE_URL)).then((response) => response.arrayBuffer()));
       await ffmpeg.writeFile("DejaVuSans.ttf", subtitleFont);
-      workingFiles.push("captions.srt", "DejaVuSans.ttf");
+      workingFiles.push("captions.ass", "DejaVuSans.ttf");
     }
 
     if (audioLabels.length > 1) {
@@ -674,7 +1053,7 @@ async function renderVideo() {
       finalArgs.push("-map", "0:v:0", "-map", audioLabels.length > 1 ? "[aout]" : "0:a:0");
       if (burnCaptions) {
         finalArgs.push(
-          "-vf", "subtitles=captions.srt:fontsdir=.:force_style='FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H66000000,BorderStyle=1,Outline=2,Shadow=0,MarginV=105,Alignment=2'",
+          "-vf", "subtitles=captions.ass:fontsdir=.",
           "-c:v", "libx264", "-preset", settings.preset, "-crf", settings.crf,
         );
       } else {
@@ -833,9 +1212,51 @@ function wireEvents() {
     input.addEventListener("input", () => {
       $(`#${valueId}`).textContent = `${toFaDigits(input.value)}٪`;
       setRangeVisual(input);
+      const segment = state.preview.segments[state.preview.index];
+      if (segment) syncPreviewGains(segment);
       saveDraft();
     });
   }
+
+  $$('[data-caption-preset]').forEach((button) => {
+    button.addEventListener("click", () => setCaptionPreset(button.dataset.captionPreset));
+  });
+  refs.captionFontSize.addEventListener("input", () => {
+    state.captionStyle.fontSize = Number(refs.captionFontSize.value);
+    applyCaptionStyle();
+    saveDraft();
+  });
+  refs.captionPosition.addEventListener("change", () => {
+    state.captionStyle.position = refs.captionPosition.value;
+    applyCaptionStyle();
+    saveDraft();
+  });
+  refs.captionColor.addEventListener("input", () => {
+    state.captionStyle.color = refs.captionColor.value;
+    applyCaptionStyle();
+    saveDraft();
+  });
+  $("#burnCaptions").addEventListener("change", () => {
+    updatePreviewCaption(state.preview.globalTime);
+    saveDraft();
+  });
+
+  refs.mixPreviewButton.addEventListener("click", () => openMixPreview().catch((error) => showToast(error.message || "بازکردن پیش‌نمایش ممکن نشد.")));
+  $("#closeMixPreview").addEventListener("click", closeMixPreview);
+  refs.mixPreviewPlay.addEventListener("click", () => {
+    if (state.preview.playing) pauseMixPreview();
+    else playMixPreview();
+  });
+  refs.mixPreviewSeek.addEventListener("input", () => {
+    const wasPlaying = state.preview.playing;
+    loadMixPreviewAt(Number(refs.mixPreviewSeek.value), wasPlaying).catch((error) => showToast(error.message));
+  });
+  refs.mixPreviewDialog.addEventListener("close", () => {
+    pauseMixPreview();
+    state.preview.loadToken += 1;
+    refs.mixPreviewVideo.removeAttribute("src");
+    refs.mixPreviewVideo.load();
+  });
 
   refs.projectTitle.addEventListener("change", saveDraft);
   [refs.outputName, refs.resolution, refs.fitMode, refs.quality, $("#burnCaptions")].forEach((input) => input.addEventListener("change", () => {
@@ -909,6 +1330,7 @@ function init() {
   syncGlobalRanges();
   renderClipCards();
   updateSummary();
+  $("#launchWarning").hidden = location.protocol !== "file:";
   registerServiceWorker();
 }
 

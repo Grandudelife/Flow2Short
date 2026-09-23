@@ -74,6 +74,11 @@
       </aside>
 
       <main id="workspace" class="workspace">
+        <aside class="launch-warning" id="launchWarning" hidden aria-live="polite">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 9v5M12 17.5v.5"/></svg>
+          <div><strong>برنامه در حالت نمایش باز شده است</strong><p>پیش‌نمایش کار می‌کند؛ برای ساخت فایل نهایی، این صفحه را ببندید و فایل <b dir="ltr">Start Flow2Short.command</b> را اجرا کنید.</p></div>
+        </aside>
+
         <section id="clipsStep" class="workspace-section section-clips" aria-labelledby="clipsHeading">
           <div class="section-heading">
             <div>
@@ -184,6 +189,33 @@
               <i aria-hidden="true"></i>
             </label>
           </article>
+
+          <div class="caption-studio" id="captionStudio">
+            <div class="caption-style-stage" aria-label="پیش‌نمایش ظاهر زیرنویس">
+              <span>پیش‌نمایش استایل</span>
+              <div class="caption-safe-area">
+                <p class="styled-caption" id="captionStylePreview">YOUR NEXT BIG IDEA</p>
+              </div>
+            </div>
+
+            <div class="caption-tools">
+              <div class="caption-tool-head"><div><h3>استایل زیرنویس</h3><p>ظاهر انتخاب‌شده در پیش‌نمایش و خروجی نهایی استفاده می‌شود.</p></div><strong id="captionPresetName">بولد پاپ</strong></div>
+              <div class="caption-presets" role="radiogroup" aria-label="انتخاب استایل زیرنویس">
+                <button class="caption-preset is-selected" type="button" role="radio" aria-checked="true" data-caption-preset="impact"><span class="preset-sample preset-impact">IDEA</span><small>بولد پاپ</small></button>
+                <button class="caption-preset" type="button" role="radio" aria-checked="false" data-caption-preset="clean"><span class="preset-sample preset-clean">CLEAR</span><small>تمیز</small></button>
+                <button class="caption-preset" type="button" role="radio" aria-checked="false" data-caption-preset="boxed"><span class="preset-sample preset-boxed">FOCUS</span><small>باکس</small></button>
+                <button class="caption-preset" type="button" role="radio" aria-checked="false" data-caption-preset="mint"><span class="preset-sample preset-mint">FRESH</span><small>مینت</small></button>
+                <button class="caption-preset" type="button" role="radio" aria-checked="false" data-caption-preset="neon"><span class="preset-sample preset-neon">GLOW</span><small>نئون</small></button>
+                <button class="caption-preset" type="button" role="radio" aria-checked="false" data-caption-preset="minimal"><span class="preset-sample preset-minimal">STORY</span><small>مینیمال</small></button>
+              </div>
+
+              <div class="caption-controls">
+                <label><span>اندازه متن</span><div class="range-with-value"><input id="captionFontSize" type="range" min="36" max="84" value="58" /><output id="captionFontSizeValue">۵۸</output></div></label>
+                <label><span>جایگاه</span><select id="captionPosition"><option value="bottom">پایین — پیشنهادی</option><option value="center">وسط</option><option value="top">بالا</option></select></label>
+                <label><span>رنگ اصلی</span><input class="caption-color" id="captionColor" type="color" value="#ffdc42" aria-label="رنگ اصلی زیرنویس" /></label>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section id="exportStep" class="workspace-section export-section" aria-labelledby="exportHeading">
@@ -226,10 +258,16 @@
         <span class="desktop-summary"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M8 8h8v8H8z"/></svg><small>خروجی</small><strong id="outputSummary">۱۰۸۰ × ۱۹۲۰</strong></span>
       </div>
       <p class="local-note"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2"/><rect x="5" y="10" width="14" height="11" rx="2"/></svg>همه پردازش‌ها روی دستگاه شما انجام می‌شود</p>
-      <button class="primary-button" id="renderButton" type="button" disabled>
-        <span>ساخت ویدئوی نهایی</span>
-        <svg viewBox="0 0 24 24"><path d="m13 2-1 6 6-1-9 15 1-8-6 1 9-13Z"/></svg>
-      </button>
+      <div class="render-buttons">
+        <button class="preview-button" id="mixPreviewButton" type="button" disabled>
+          <svg viewBox="0 0 24 24"><path d="m9 6 9 6-9 6V6Z"/></svg>
+          <span>پیش‌نمایش ترکیب</span>
+        </button>
+        <button class="primary-button" id="renderButton" type="button" disabled>
+          <span>ساخت ویدئوی نهایی</span>
+          <svg viewBox="0 0 24 24"><path d="m13 2-1 6 6-1-9 15 1-8-6 1 9-13Z"/></svg>
+        </button>
+      </div>
     </footer>
 
     <dialog id="settingsDialog" class="app-dialog">
@@ -253,6 +291,36 @@
         <button id="downloadButton" class="primary-button" type="button" hidden>دانلود ویدئو</button>
         <button id="closeRenderButton" class="quiet-button" type="button" hidden>بستن</button>
       </div>
+    </dialog>
+
+    <dialog id="mixPreviewDialog" class="mix-preview-dialog">
+      <div class="mix-preview-head">
+        <div><h2>پیش‌نمایش ترکیب نهایی</h2><p>برش کلیپ‌ها، صدای اصلی، نریشن، موسیقی و زیرنویس با هم پخش می‌شوند.</p></div>
+        <button class="icon-button" id="closeMixPreview" type="button" aria-label="بستن پیش‌نمایش"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="mix-preview-layout">
+        <div class="mix-preview-stage" id="mixPreviewStage">
+          <video id="mixPreviewVideo" playsinline preload="metadata"></video>
+          <div class="mix-caption-layer"><p class="styled-caption" id="mixPreviewCaption" hidden></p></div>
+          <span class="preview-clip-name" id="mixPreviewClipName" dir="ltr"></span>
+        </div>
+        <div class="mix-preview-panel">
+          <button class="mix-play-button" id="mixPreviewPlay" type="button" aria-label="پخش پیش‌نمایش">
+            <svg class="play-icon" viewBox="0 0 24 24"><path d="m9 6 9 6-9 6V6Z"/></svg>
+            <svg class="pause-icon" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>
+          </button>
+          <div class="preview-time"><span id="mixPreviewCurrent">۰۰:۰۰</span><i>/</i><span id="mixPreviewTotal">۰۰:۰۰</span></div>
+          <label class="preview-scrubber"><span class="sr-only">زمان پیش‌نمایش</span><input id="mixPreviewSeek" type="range" min="0" max="1" step="0.01" value="0" /></label>
+          <div class="preview-mix-status">
+            <span><i class="status-source"></i>صدای کلیپ</span>
+            <span><i class="status-narration"></i>نریشن</span>
+            <span><i class="status-music"></i>موسیقی</span>
+          </div>
+          <p class="preview-note">این پیش‌نمایش سریع است؛ کیفیت تصویر خروجی نهایی براساس تنظیمات بخش خروجی ساخته می‌شود.</p>
+        </div>
+      </div>
+      <audio id="mixPreviewNarration" preload="auto"></audio>
+      <audio id="mixPreviewMusic" preload="auto" loop></audio>
     </dialog>
 
     <input id="projectImportInput" type="file" accept="application/json,.json" hidden />

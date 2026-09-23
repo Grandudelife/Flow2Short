@@ -36,6 +36,8 @@ Unlike a general-purpose editor, Flow2Short Studio makes the repeated AI-short w
 - Set original Flow audio from 0–100% independently for each clip.
 - Add narration and optional background music with independent volume controls.
 - Add or import SRT captions.
+- Preview the complete cut with synchronized source audio, narration, music and captions before rendering.
+- Choose from production-ready caption presets and tune size, color and vertical placement.
 - Save/import a lightweight project recipe.
 - Render MP4 locally in the browser where memory permits.
 - Browser video rendering is expected to be slower than native FFmpeg.

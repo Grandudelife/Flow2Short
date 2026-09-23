@@ -6,12 +6,16 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 app_dir="$script_dir/app"
 port="43121"
 
-if ! command -v python3 >/dev/null 2>&1; then
-  osascript -e 'display dialog "برای اجرای Flow2Short، Python 3 روی این مک پیدا نشد. می‌توانید نسخه GitHub Pages را اجرا کنید یا Python 3 را نصب کنید." buttons {"باشه"} default button 1 with icon caution'
+if command -v python3 >/dev/null 2>&1; then
+  server_command=(python3 -m http.server "$port" --bind 127.0.0.1 --directory "$app_dir")
+elif command -v ruby >/dev/null 2>&1; then
+  server_command=(ruby -run -ehttpd "$app_dir" -p"$port" -b127.0.0.1)
+else
+  osascript -e 'display dialog "برای اجرای Flow2Short، ابزار سرور محلی روی این مک پیدا نشد. می‌توانید نسخه GitHub Pages را اجرا کنید یا Python 3 را نصب کنید." buttons {"باشه"} default button 1 with icon caution'
   exit 1
 fi
 
-python3 -m http.server "$port" --bind 127.0.0.1 --directory "$app_dir" >/tmp/flow2short-server.log 2>&1 &
+"${server_command[@]}" >/tmp/flow2short-server.log 2>&1 &
 server_pid=$!
 
 cleanup() {

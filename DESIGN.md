@@ -188,6 +188,14 @@ The desktop step rail uses a circular icon well and two lines of copy. The activ
 
 The signature card binds the thumbnail, filename, trim inputs, source-audio range and reordering actions into one unit. Desktop keeps these decisions on one line; mobile preserves association by moving the audio range to a second row inside the same card.
 
+### Mix Preview
+
+The fast preview is a protected-focus vertical player opened from the persistent render bar. It plays trimmed clips in order and keeps source audio, narration, looping music and SRT cues synchronized on a single global clock. Its transport is intentionally compact: play/pause, current time, total time and seek. Preview remains available in direct-file mode because it does not invoke FFmpeg; final rendering remains disabled there.
+
+### Caption Studio
+
+Caption styling stays inline with the caption step rather than becoming a separate editor. Six presets—Impact, Clean, Boxed, Mint, Neon and Minimal—share one preview stage and three explicit controls: size, vertical position and primary color. The selected style is applied both to the browser preview and the FFmpeg subtitle filter. Presets may use neutral or emerald treatments; coral remains reserved for music.
+
 ## Do's and Don'ts
 
 ### Do:
