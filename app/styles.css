@@ -331,6 +331,7 @@ svg {
   width: var(--rail-w);
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
   justify-content: space-between;
   padding: 24px 16px 20px;
   border-left: 1px solid var(--line);
@@ -908,6 +909,78 @@ input[type="range"]::-moz-range-thumb {
   padding-top: 10px;
 }
 
+.clip-split {
+  grid-column: 2 / -2;
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.clip-split label { display: flex; align-items: center; gap: 8px; }
+.clip-split input { width: 76px; min-height: 32px; border: 1px solid var(--line); border-radius: 7px; padding: 4px; direction: ltr; }
+.clip-split button, .caption-editor-actions button, .caption-cue button, .overlay-form button, .overlay-list button {
+  min-height: 32px; border: 1px solid var(--line); border-radius: 8px; background: #f2faf6; color: var(--green-dark); padding: 5px 10px; font: inherit; cursor: pointer;
+}
+.clip-split button:disabled { opacity: .45; cursor: default; }
+.timeline-wrap { margin-top: 16px; }
+.timeline-wrap[hidden] { display: none; }
+.timeline-wrap strong { font-size: 13px; }
+.timeline-wrap p { margin: 3px 0 9px; color: var(--muted); font-size: 11px; }
+.edit-timeline { display: flex; gap: 3px; overflow: hidden; border-radius: 10px; background: var(--blue-soft); padding: 4px; }
+.edit-timeline button { min-width: 30px; max-width: 100%; display: flex; align-items: center; gap: 6px; overflow: hidden; border: 0; border-radius: 7px; padding: 9px; background: #d9f2e8; color: var(--green-dark); text-align: left; cursor: pointer; }
+.edit-timeline button:nth-child(even) { background: #dce8f5; color: var(--ink); }
+.edit-timeline button:hover { filter: brightness(.96); }
+.edit-timeline small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr; }
+
+.audio-smart-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 14px; color: var(--ink-2); font-size: 12px; }
+.audio-smart-panel label { display: flex; align-items: center; gap: 7px; }
+.audio-smart-panel input[type="range"] { width: 110px; }
+.caption-editor { margin-top: 18px; border: 1px solid var(--line); border-radius: 13px; padding: 14px; }
+.caption-editor summary { cursor: pointer; font-weight: 700; }
+.caption-editor > p, .overlay-help { color: var(--muted); font-size: 11px; }
+.caption-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.caption-cue-list { max-height: 430px; overflow: auto; display: grid; gap: 6px; }
+.caption-cue { display: grid; grid-template-columns: 54px 100px 100px minmax(130px,1fr) 52px; align-items: end; gap: 7px; border: 1px solid var(--line); border-radius: 9px; padding: 8px; }
+.caption-cue label { display: grid; gap: 3px; color: var(--muted); font-size: 10px; }
+.caption-cue input { min-width: 0; width: 100%; min-height: 32px; border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px; background: #fff; color: var(--ink); }
+.overlay-form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.overlay-form label { display: grid; gap: 5px; min-width: 110px; color: var(--ink-2); font-size: 11px; }
+.overlay-form input, .overlay-form select { max-width: 210px; min-height: 35px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; color: var(--ink); background: #fff; }
+.overlay-form input[type="file"] { max-width: 185px; }
+.overlay-list { display: grid; gap: 8px; margin-top: 12px; }
+.overlay-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 9px; font-size: 12px; }
+.overlay-item strong { flex: 1; min-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overlay-item label { display: grid; gap: 3px; color: var(--muted); font-size: 10px; }
+.overlay-item input, .overlay-item select { width: 86px; min-height: 31px; border: 1px solid var(--line); border-radius: 7px; padding: 4px; background: #fff; color: var(--ink); }
+.overlay-item input[type="text"] { width: 145px; }
+.preview-overlays { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
+.preview-overlay { position: absolute; inset-inline: 0; display: flex; justify-content: center; align-items: center; }
+.preview-overlay[data-position="top"] { top: 17%; }
+.preview-overlay[data-position="center"] { top: 50%; transform: translateY(-50%); }
+.preview-overlay[data-position="bottom"] { bottom: 25%; }
+.preview-overlay img { width: auto; height: auto; max-height: 62cqw; object-fit: contain; }
+.preview-overlay span { max-width: 78%; color: #fff; font-weight: 800; text-align: center; line-height: 1.15; text-shadow: 0 2px 7px #07111f, 0 2px 14px #07111f; overflow-wrap: anywhere; }
+.shorts-safe-guide { position: absolute; z-index: 8; inset: 15% 13% 24% 8%; border: 1.5px dashed rgba(255,255,255,.8); border-radius: 9px; background: rgba(0,0,0,.12); pointer-events: none; }
+.shorts-safe-guide[hidden] { display: none; }
+.shorts-safe-guide span { position: absolute; top: 0; right: 0; border-radius: 0 0 0 5px; padding: 3px 5px; background: rgba(0,0,0,.7); color: #fff; font-size: 9px; }
+.safe-guide-toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--ink-2); font-size: 12px; }
+
+@media (max-width: 760px) {
+  .caption-cue { grid-template-columns: 52px 1fr 1fr 45px; }
+  .caption-cue .cue-text { grid-column: 2 / 4; grid-row: 2; }
+  .caption-cue button:last-child { grid-column: 4; grid-row: 2; }
+  .overlay-form label { flex: 1 1 130px; }
+}
+
+@media (max-width: 480px) {
+  .caption-cue { grid-template-columns: 43px 1fr 1fr 40px; gap: 5px; padding: 5px; }
+  .caption-cue input { font-size: 11px; }
+  .clip-split { gap: 6px; }
+  .clip-split label { flex-wrap: wrap; }
+}
+
 .clip-transition label {
   display: grid;
   gap: 4px;
@@ -1324,7 +1397,7 @@ input[type="range"]::-moz-range-thumb {
 .mix-caption-layer {
   position: absolute;
   z-index: 3;
-  inset: 8% 7%;
+  inset: 8% 10% 24%;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -1944,6 +2017,7 @@ input[type="range"]::-moz-range-thumb {
 
 .mix-preview-stage {
   position: relative;
+  container-type: inline-size;
   width: 100%;
   aspect-ratio: 9 / 16;
   overflow: hidden;
@@ -2574,6 +2648,7 @@ input[type="range"]::-moz-range-thumb {
   }
 
   .clip-transition { grid-column: 2 / -1; }
+  .clip-split { grid-column: 2 / -1; }
 
   .media-grid {
     grid-template-columns: 1fr;

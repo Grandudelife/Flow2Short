@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fa" dir="rtl">
+<html lang="fa" dir="rtl" data-app-version="1.9">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -10,7 +10,7 @@
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.png" type="image/png" sizes="48x48" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-    <link rel="stylesheet" href="./styles.css?v=1.7" />
+    <link rel="stylesheet" href="./styles.css?v=1.9" />
   </head>
   <body>
     <a class="skip-link" href="#workspace">رفتن به محیط تدوین</a>
@@ -60,6 +60,10 @@
           <a class="step-link" href="#captionStep" data-step="captionStep">
             <span class="step-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h3M14 10h3M7 14h5M14 14h3"/></svg></span>
             <span><strong>زیرنویس</strong><small>فایل SRT انگلیسی</small></span>
+          </a>
+          <a class="step-link" href="#overlayStep" data-step="overlayStep">
+            <span class="step-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10h8M12 8v8"/></svg></span>
+            <span><strong>متن و تصویر</strong><small>لایه‌های زمان‌دار</small></span>
           </a>
           <a class="step-link" href="#logoStep" data-step="logoStep">
             <span class="step-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m4 17 5-5 3 3 3-4 5 6"/></svg></span>
@@ -120,6 +124,7 @@
           </div>
 
           <div class="clip-stack" id="clipList" aria-live="polite"></div>
+          <div class="timeline-wrap" id="timelineWrap"><strong>تایم‌لاین کلیپ‌ها</strong><p>روی هر بخش کلیک کنید تا ترکیب را از همان‌جا ببینید.</p><div id="editTimeline" class="edit-timeline" dir="ltr" hidden></div></div>
 
           <div class="empty-clips" id="emptyClips">
             <div class="empty-frames" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -167,6 +172,11 @@
               <label class="volume-control"><span>بلندی موسیقی</span><input id="musicVolume" type="range" min="0" max="100" value="18" /><output id="musicVolumeValue">۱۸٪</output></label>
             </article>
           </div>
+          <div class="audio-smart-panel">
+            <label><input id="autoDuck" type="checkbox" checked /> هنگام نریشن، موسیقی خودکار آرام شود</label>
+            <label>بلندی موسیقی زیر نریشن <input id="duckPercent" type="range" min="10" max="75" step="5" value="30" /><output id="duckPercentValue">۳۰٪</output></label>
+            <label><input id="audioFades" type="checkbox" checked /> محو نرم موسیقی در ابتدا و انتهای ویدئو</label>
+          </div>
         </section>
 
         <section id="captionStep" class="workspace-section" aria-labelledby="captionHeading">
@@ -188,7 +198,7 @@
               <button class="remove-media" data-remove="caption" type="button" hidden>حذف</button>
             </div>
             <label class="switch-row">
-              <span><strong>تثبیت زیرنویس روی ویدئو</strong><small>در صورت پشتیبانی موتور مرورگر</small></span>
+              <span><strong>تثبیت زیرنویس روی ویدئو</strong><small>در صورت خطا، خروجی ناقص ساخته نمی‌شود</small></span>
               <input id="burnCaptions" type="checkbox" checked />
               <i aria-hidden="true"></i>
             </label>
@@ -239,6 +249,27 @@
               </div>
             </div>
           </div>
+          <details class="caption-editor" id="captionEditor">
+            <summary>ویرایش دقیق متن و زمان زیرنویس <span id="captionEditorCount"></span></summary>
+            <p>زمان‌ها برحسب ثانیهٔ کل ویدئو هستند؛ جابه‌جایی کلی زیرنویس جداگانه روی همهٔ ردیف‌ها اعمال می‌شود.</p>
+            <div class="caption-editor-actions"><button id="captionAddCue" type="button">افزودن ردیف</button><button id="captionDownloadSrt" type="button">دانلود SRT ویرایش‌شده</button></div>
+            <div id="captionCueList" class="caption-cue-list"></div>
+          </details>
+        </section>
+
+        <section id="overlayStep" class="workspace-section" aria-labelledby="overlayHeading">
+          <div class="section-heading compact"><div><h2 id="overlayHeading">متن و تصویر روی ویدئو</h2><p>عنوان، نام استارتاپ، عکس محصول یا فراخوان را در زمان دلخواه نمایش دهید.</p></div></div>
+          <div class="overlay-form">
+            <label>متن کوتاه <input id="overlayText" type="text" maxlength="120" placeholder="مثلاً Battery Smart" /></label>
+            <label>یا تصویر <input id="overlayImage" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" /></label>
+            <label>شروع (ثانیه) <input id="overlayStart" type="number" min="0" step="0.05" value="0" /></label>
+            <label>پایان (ثانیه) <input id="overlayEnd" type="number" min="0.05" step="0.05" value="3" /></label>
+            <label>جایگاه <select id="overlayPosition"><option value="top">بالا</option><option value="center">وسط</option><option value="bottom">پایین</option></select></label>
+            <label>اندازه <select id="overlaySize"><option value="20">کوچک</option><option value="35" selected>متوسط</option><option value="50">بزرگ</option></select></label>
+            <button id="addOverlay" type="button">افزودن لایه</button>
+          </div>
+          <p class="overlay-help">در صورت انتخاب تصویر، متن این فرم نادیده گرفته می‌شود. تصویرهای پروژه را پس از بازکردن Recipe دوباره انتخاب کنید.</p>
+          <div id="overlayList" class="overlay-list" aria-live="polite"></div>
         </section>
 
         <section id="logoStep" class="workspace-section" aria-labelledby="logoHeading">
@@ -347,10 +378,13 @@
           <video id="mixPreviewVideo" playsinline preload="metadata"></video>
           <img id="mixTransitionFreeze" class="transition-freeze" alt="" hidden />
           <img id="mixPreviewLogo" class="mix-preview-logo" alt="لوگوی انتخاب‌شده" hidden />
+          <div id="mixPreviewOverlays" class="preview-overlays"></div>
           <div class="mix-caption-layer"><p class="styled-caption" id="mixPreviewCaption" hidden></p></div>
+          <div id="shortsSafeGuide" class="shorts-safe-guide" hidden><span>محدودهٔ امن تقریبی</span></div>
           <span class="preview-clip-name" id="mixPreviewClipName" dir="ltr"></span>
         </div>
         <div class="mix-preview-panel">
+          <label class="safe-guide-toggle"><input id="showSafeGuide" type="checkbox" /> نمایش راهنمای محدودهٔ امن Shorts</label>
           <div class="preview-watermark-controls" dir="rtl">
             <div class="preview-watermark-head"><strong>واترمارک</strong><button id="previewChooseLogo" type="button">انتخاب لوگو</button></div>
             <input id="previewLogoInput" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden />
@@ -384,6 +418,7 @@
               <button type="button" data-caption-shift="100">+۱۰۰</button>
             </div>
             <button class="preview-caption-jump" type="button" id="previewFirstCaption">رفتن به اولین کلمه</button>
+            <button class="preview-caption-jump" type="button" id="editCurrentCaption">ویرایش زیرنویس همین لحظه</button>
           </div>
         </div>
       </div>
@@ -393,6 +428,6 @@
 
     <input id="projectImportInput" type="file" accept="application/json,.json" hidden />
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script defer src="./app.js?v=1.7"></script>
+    <script defer src="./app.js?v=1.9"></script>
   </body>
 </html>

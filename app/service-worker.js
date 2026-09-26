@@ -1,4 +1,4 @@
-const CACHE_NAME = "flow2short-studio-v10";
+const CACHE_NAME = "flow2short-studio-v12";
 const APP_ASSETS = [
   "./",
   "./index.html",
@@ -32,7 +32,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("flow2short-studio-") && key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -44,7 +44,7 @@ self.addEventListener("fetch", (event) => {
 
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: "no-store" })
         .then((response) => {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", clone));
@@ -57,13 +57,13 @@ self.addEventListener("fetch", (event) => {
 
   // App code and styles must follow the installed Mac package, even on the same localhost port.
   if (/\/(app\.js|styles\.css)$/.test(requestUrl.pathname)) {
-    event.respondWith(fetch(event.request).then((response) => {
+    event.respondWith(fetch(event.request, { cache: "no-store" }).then((response) => {
       if (response.ok) {
         const clone = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
       }
       return response;
-    }).catch(() => caches.match(event.request)));
+    }).catch(async () => (await caches.match(event.request)) || caches.match(`./${requestUrl.pathname.split("/").pop()}`)));
     return;
   }
 

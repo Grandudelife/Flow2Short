@@ -10,6 +10,9 @@ const state = {
   caption: null,
   logo: null,
   logoStyle: { position: "top-right", sizePercent: 18 },
+  overlays: [],
+  audioMix: { duck: true, duckPercent: 30, fades: true },
+  remembered: { narration: null, music: null, caption: null, logo: null },
   captionStyle: {
     preset: "impact",
     fontSize: 58,
@@ -37,6 +40,7 @@ const state = {
     gains: null,
     freezeCache: new Map(),
     freezePending: new Map(),
+    overlaysKey: "",
   },
   settings: {
     autosave: true,
@@ -225,6 +229,7 @@ function buildCaptionEvents(cues, groupSize, wordByWord) {
 
 function refreshCaptionDisplay() {
   if (!state.caption) return;
+  state.caption.wordByWord = state.caption.cues.length > 0 && state.caption.cues.every((cue) => !/\s/u.test(cue.text.trim()));
   state.caption.displayCues = buildCaptionEvents(state.caption.cues, state.captionStyle.groupSize, state.caption.wordByWord);
   const mode = state.caption.wordByWord
     ? state.captionStyle.groupSize === 1 ? "نمایش تک‌کلمه‌ای" : `پانچ ${toFaDigits(state.captionStyle.groupSize)} کلمه‌ای`
@@ -236,6 +241,34 @@ function refreshCaptionDisplay() {
   refs.previewCaptionGroupSize.value = String(state.captionStyle.groupSize);
   refs.mixPreviewCaption.dataset.cue = "";
   updatePreviewCaption(state.preview.globalTime);
+  renderCaptionEditor();
+}
+
+function renderCaptionEditor() {
+  const list = $("#captionCueList");
+  const cues = state.caption?.cues || [];
+  $("#captionEditorCount").textContent = cues.length ? `(${toFaDigits(cues.length)})` : "";
+  $("#captionEditor").classList.toggle("is-empty", !cues.length);
+  list.innerHTML = cues.map((cue, index) => `<div class="caption-cue" data-cue-index="${index}">
+    <button type="button" data-cue-action="jump" title="رفتن به این زیرنویس">${toFaDigits(index + 1)} ▶</button>
+    <label>شروع <input type="number" data-cue-field="start" min="0" step="0.01" value="${cue.start.toFixed(2)}" dir="ltr" /></label>
+    <label>پایان <input type="number" data-cue-field="end" min="0.01" step="0.01" value="${cue.end.toFixed(2)}" dir="ltr" /></label>
+    <label class="cue-text">متن <input type="text" data-cue-field="text" value="${escapeHtml(cue.text).replace(/"/g, "&quot;")}" dir="auto" /></label>
+    <button type="button" data-cue-action="delete" aria-label="حذف زیرنویس ${toFaDigits(index + 1)}">حذف</button>
+  </div>`).join("") || "<p>ابتدا فایل SRT وارد کنید.</p>";
+}
+
+function formatSrtTime(seconds) {
+  const ms = Math.max(0, Math.round(seconds * 1000));
+  return `${String(Math.floor(ms / 3600000)).padStart(2, "0")}:${String(Math.floor(ms / 60000) % 60).padStart(2, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")},${String(ms % 1000).padStart(3, "0")}`;
+}
+
+function downloadEditedSrt() {
+  if (!state.caption?.cues.length) return showToast("ابتدا زیرنویس را وارد کنید.");
+  const shift = state.captionStyle.offsetMs / 1000;
+  const adjusted = state.caption.cues.map((cue) => ({ ...cue, start: Math.max(0, cue.start + shift), end: cue.end + shift })).filter((cue) => cue.end > cue.start);
+  const content = adjusted.map((cue, index) => `${index + 1}\n${formatSrtTime(cue.start)} --> ${formatSrtTime(cue.end)}\n${cue.text}`).join("\n\n") + "\n";
+  downloadBlob(new Blob(["\uFEFF", content], { type: "text/plain;charset=utf-8" }), "Flow2Short-edited.srt");
 }
 
 function hexToAssColor(hex, alpha = "00") {
@@ -255,7 +288,7 @@ function formatAssTime(seconds) {
 function buildAssCaptions(width, height) {
   const preset = CAPTION_PRESETS[state.captionStyle.preset] || CAPTION_PRESETS.clean;
   const alignment = { top: 8, center: 5, bottom: 2 }[state.captionStyle.position] || 2;
-  const margin = Math.round(height * (state.captionStyle.position === "bottom" ? 0.115 : 0.08));
+  const margin = Math.round(height * (state.captionStyle.position === "bottom" ? 0.24 : 0.08));
   const fontSize = Math.max(28, Math.round(state.captionStyle.fontSize * (width / 1080)));
   const primary = hexToAssColor(preset.textColor || state.captionStyle.color || preset.color);
   const outlineBase = preset.borderStyle === 3
@@ -413,6 +446,7 @@ async function setLogo(file) {
     const height = bitmap.height;
     if (state.logo?.url) URL.revokeObjectURL(state.logo.url);
     state.logo = { file, width, height, url: URL.createObjectURL(file) };
+    state.remembered.logo = { name: file.name, size: file.size };
     refs.mixPreviewLogo.src = state.logo.url;
     refs.logoStageMark.src = state.logo.url;
     $("#logoName").textContent = file.name;
@@ -434,6 +468,7 @@ async function setLogo(file) {
 function removeLogo(persist = true) {
   if (state.logo?.url) URL.revokeObjectURL(state.logo.url);
   state.logo = null;
+  state.remembered.logo = null;
   refs.logoInput.value = "";
   refs.previewLogoInput.value = "";
   refs.mixPreviewLogo.removeAttribute("src");
@@ -458,6 +493,92 @@ async function logoPngBytes(frameWidth, frameHeight) {
   } finally {
     bitmap.close();
   }
+}
+
+function restoreOverlays(items) {
+  for (const overlay of state.overlays) if (overlay.url) URL.revokeObjectURL(overlay.url);
+  state.overlays = (Array.isArray(items) ? items : []).filter((item) =>
+    ["text", "image"].includes(item.kind) && Number.isFinite(Number(item.start)) && Number.isFinite(Number(item.end)) && Number(item.end) > Number(item.start)
+  ).map((item) => ({
+    id: uid(), kind: item.kind, text: String(item.text || "").slice(0, 120),
+    name: item.name || "", sizeBytes: item.sizeBytes || 0, file: null, url: null,
+    start: Number(item.start), end: Number(item.end),
+    position: ["top", "center", "bottom"].includes(item.position) ? item.position : "top",
+    size: [20, 35, 50].includes(Number(item.size)) ? Number(item.size) : 35,
+  }));
+  renderOverlays();
+}
+
+function renderOverlays() {
+  state.preview.overlaysKey = "";
+  $("#overlayList").innerHTML = state.overlays.map((item) => `<div class="overlay-item" data-overlay-id="${item.id}">
+    <strong>${escapeHtml(item.kind === "text" ? item.text : item.name || "تصویر")}${item.kind === "image" && !item.file ? " · فایل را دوباره انتخاب کنید" : ""}</strong>
+    ${item.kind === "text" ? `<label>متن <input type="text" data-overlay-field="text" maxlength="120" value="${escapeHtml(item.text).replace(/"/g, "&quot;")}" dir="auto" /></label>` : ""}
+    <label>شروع <input type="number" data-overlay-field="start" min="0" step="0.05" value="${item.start.toFixed(2)}" dir="ltr" /></label>
+    <label>پایان <input type="number" data-overlay-field="end" min="0.05" step="0.05" value="${item.end.toFixed(2)}" dir="ltr" /></label>
+    <label>جایگاه <select data-overlay-field="position">${["top", "center", "bottom"].map((position) => `<option value="${position}" ${item.position === position ? "selected" : ""}>${{top:"بالا",center:"وسط",bottom:"پایین"}[position]}</option>`).join("")}</select></label>
+    <label>اندازه <select data-overlay-field="size">${[20, 35, 50].map((size) => `<option value="${size}" ${item.size === size ? "selected" : ""}>${toFaDigits(size)}٪</option>`).join("")}</select></label>
+    <button type="button" data-overlay-action="preview">دیدن</button>
+    ${item.kind === "image" && !item.file ? '<label class="small-action neutral">انتخاب تصویر<input type="file" data-overlay-relink accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden /></label>' : ""}
+    <button type="button" data-overlay-action="delete">حذف</button>
+  </div>`).join("") || "<p class=\"overlay-help\">هنوز لایه‌ای اضافه نشده است.</p>";
+  updatePreviewOverlays(state.preview.globalTime);
+}
+
+function updatePreviewOverlays(time) {
+  const container = $("#mixPreviewOverlays");
+  if (!container) return;
+  const visible = state.overlays.filter((item) => time >= item.start && time < item.end && (item.kind === "text" || item.url));
+  const key = visible.map((item) => item.id).join(":");
+  if (state.preview.overlaysKey === key) return;
+  state.preview.overlaysKey = key;
+  container.innerHTML = visible.map((item) => `<div class="preview-overlay" data-position="${item.position}">
+    ${item.kind === "image" ? `<img src="${item.url}" style="max-width:${item.size}%" alt="" />` : `<span dir="auto" style="font-size:clamp(12px,${item.size * 0.9}px,42px)">${escapeHtml(item.text)}</span>`}
+  </div>`).join("");
+}
+
+async function overlayPngBytes(item, frameWidth, frameHeight) {
+  let canvas = document.createElement("canvas");
+  const width = Math.round(frameWidth * 0.78);
+  if (item.kind === "image") {
+    const bitmap = await createImageBitmap(item.file);
+    try {
+      const scale = Math.min(frameWidth * item.size / 100 / bitmap.width, frameHeight * 0.35 / bitmap.height);
+      canvas.width = Math.max(2, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(2, Math.round(bitmap.height * scale));
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    } finally { bitmap.close(); }
+  } else {
+    const fontSize = Math.round(frameWidth * item.size / 350);
+    await document.fonts.load(`700 ${fontSize}px Vazirmatn`);
+    const context = canvas.getContext("2d");
+    context.font = `700 ${fontSize}px Vazirmatn, sans-serif`;
+    const lines = [];
+    let line = "";
+    for (const word of item.text.split(/\s+/u)) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && context.measureText(next).width > width - 48) { lines.push(line); line = word; }
+      else line = next;
+    }
+    if (line) lines.push(line);
+    canvas.width = width;
+    canvas.height = Math.max(2, Math.round(lines.length * fontSize * 1.22 + 32));
+    const draw = canvas.getContext("2d");
+    draw.font = `700 ${fontSize}px Vazirmatn, sans-serif`;
+    draw.textAlign = "center";
+    draw.textBaseline = "middle";
+    draw.lineJoin = "round";
+    draw.lineWidth = Math.max(4, fontSize * 0.1);
+    draw.strokeStyle = "#10213c";
+    draw.fillStyle = "white";
+    lines.forEach((text, index) => {
+      const y = 18 + fontSize * (index + 0.5) * 1.22;
+      draw.strokeText(text, canvas.width / 2, y, canvas.width - 48);
+      draw.fillText(text, canvas.width / 2, y, canvas.width - 48);
+    });
+  }
+  const blob = await new Promise((resolve, reject) => canvas.toBlob((image) => image ? resolve(image) : reject(new Error("ساخت لایهٔ تصویر ممکن نشد.")), "image/png"));
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height };
 }
 
 function getMediaDuration(file) {
@@ -531,31 +652,31 @@ async function addClips(files) {
 
   refs.dropZone.setAttribute("aria-busy", "true");
   let importedRecipe = null;
-  try { importedRecipe = JSON.parse(localStorage.getItem("flow2short-imported-recipe") || "null"); } catch { /* ignore */ }
+  try { importedRecipe = JSON.parse(localStorage.getItem("flow2short-imported-recipe") || localStorage.getItem("flow2short-draft") || "null"); } catch { /* ignore */ }
   for (const file of videoFiles) {
     try {
       const [duration, thumbnail] = await Promise.all([getMediaDuration(file), createVideoThumbnail(file)]);
-      const remembered = importedRecipe?.project?.clips?.find((item) => item.name === file.name && (!item.size || item.size === file.size));
-      state.clips.push({
-        id: uid(),
-        file,
-        url: URL.createObjectURL(file),
-        name: file.name,
-        duration,
-        start: remembered ? Math.max(0, Math.min(duration, Number(remembered.start) || 0)) : 0,
-        end: remembered ? Math.max(0.05, Math.min(duration, Number(remembered.end) || duration)) : duration,
-        volume: remembered ? Math.max(0, Math.min(100, Number(remembered.sourceAudioPercent) || 0)) : 35,
-        transition: TRANSITIONS[remembered?.transition] ? remembered.transition : "none",
-        transitionSeconds: TRANSITION_DURATIONS.includes(Number(remembered?.transitionSeconds)) ? Number(remembered.transitionSeconds) : 0.4,
-        thumbnail,
-      });
+      const existing = state.clips.some((clip) => clip.name === file.name && clip.file.size === file.size);
+      if (existing) continue;
+      const matching = importedRecipe?.project?.clips?.filter((item) => item.name === file.name && (!item.size || item.size === file.size)) || [];
+      for (const remembered of matching.length ? matching : [null]) {
+        state.clips.push({
+          id: uid(), file, url: URL.createObjectURL(file), name: file.name, duration,
+          start: remembered ? Math.max(0, Math.min(duration - 0.05, Number(remembered.start) || 0)) : 0,
+          end: remembered ? Math.max(0.05, Math.min(duration, Number(remembered.end) || duration)) : duration,
+          volume: remembered ? Math.max(0, Math.min(100, Number(remembered.sourceAudioPercent) || 0)) : 35,
+          transition: TRANSITIONS[remembered?.transition] ? remembered.transition : "none",
+          transitionSeconds: TRANSITION_DURATIONS.includes(Number(remembered?.transitionSeconds)) ? Number(remembered.transitionSeconds) : 0.4,
+          thumbnail,
+          recipeOrder: remembered ? importedRecipe.project.clips.indexOf(remembered) : 9999,
+        });
+      }
     } catch (error) {
       showToast(error.message);
     }
   }
   if (importedRecipe?.project?.clips?.length) {
-    const order = new Map(importedRecipe.project.clips.map((item, index) => [item.name, index]));
-    state.clips.sort((a, b) => (order.get(a.name) ?? 9999) - (order.get(b.name) ?? 9999));
+    state.clips.sort((a, b) => (a.recipeOrder ?? 9999) - (b.recipeOrder ?? 9999));
   }
   refs.dropZone.removeAttribute("aria-busy");
   renderClipCards();
@@ -595,6 +716,11 @@ function renderClipCards() {
         <button type="button" data-action="down" aria-label="انتقال یک ردیف به پایین" ${index === state.clips.length - 1 ? "disabled" : ""}><svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
         <button class="delete-clip" type="button" data-action="delete" aria-label="حذف کلیپ"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14"/><path d="M10 11v6M14 11v6"/></svg></button>
       </div>
+      <div class="clip-split">
+        <label>تقسیم در ثانیهٔ فایل <input data-field="splitAt" type="number" step="0.05" min="${formatDecimal(clip.start + 0.1)}" max="${formatDecimal(clip.end - 0.1)}" value="${formatDecimal((clip.start + clip.end) / 2)}" aria-label="محل تقسیم ${escapeHtml(clip.name)}" /></label>
+        <button type="button" data-action="split" ${clipDuration(clip) < 0.22 ? "disabled" : ""}>تقسیم کلیپ</button>
+        <button type="button" data-action="join" ${index < state.clips.length - 1 && state.clips[index + 1].file === clip.file && Math.abs(state.clips[index + 1].start - clip.end) < 0.06 && clip.transition === "none" ? "" : "disabled"}>ادغام با بعدی</button>
+      </div>
       ${index < state.clips.length - 1 ? `<div class="clip-transition">
         <label>ترنزیشن به کلیپ بعدی <select data-field="transition" aria-label="ترنزیشن بعد از ${escapeHtml(clip.name)}">
           ${Object.entries(TRANSITIONS).map(([key, value]) => `<option value="${key}" ${clip.transition === key ? "selected" : ""}>${value.label}</option>`).join("")}
@@ -608,7 +734,49 @@ function renderClipCards() {
   `).join("");
 
   $$('input[type="range"]', refs.clipList).forEach(setRangeVisual);
+  renderTimeline();
   updateLogoStage();
+}
+
+function renderTimeline() {
+  const timeline = $("#editTimeline");
+  if (!timeline) return;
+  const total = state.clips.reduce((sum, clip) => sum + clipDuration(clip), 0);
+  let elapsed = 0;
+  timeline.hidden = !state.clips.length;
+  $("#timelineWrap").hidden = !state.clips.length;
+  timeline.innerHTML = state.clips.map((clip, index) => {
+    const start = elapsed;
+    elapsed += clipDuration(clip);
+    return `<button type="button" data-timeline-time="${start.toFixed(3)}" style="flex:${clipDuration(clip)}" title="${escapeHtml(clip.name)} · ${formatTime(start)}" aria-label="نمایش کلیپ ${toFaDigits(index + 1)} در ${formatTime(start)}"><span>${toFaDigits(index + 1)}</span><small>${escapeHtml(clip.name)}</small></button>`;
+  }).join("");
+  timeline.setAttribute("aria-label", `تایم‌لاین ${formatTime(total)}؛ برای دیدن هر بخش کلیک کنید`);
+}
+
+function splitClip(index, at) {
+  const clip = state.clips[index];
+  if (!clip || !(at > clip.start + 0.08 && at < clip.end - 0.08)) return showToast("محل تقسیم باید دست‌کم ۰٫۱ ثانیه از ابتدا و انتهای برش فاصله داشته باشد.");
+  const second = { ...clip, id: uid(), url: URL.createObjectURL(clip.file), start: at };
+  clip.end = at;
+  clip.transition = "none";
+  state.clips.splice(index + 1, 0, second);
+  renderClipCards();
+  updateSummary();
+  saveDraft();
+}
+
+function joinClip(index) {
+  const first = state.clips[index];
+  const second = state.clips[index + 1];
+  if (!first || !second || first.file !== second.file || Math.abs(first.end - second.start) > 0.06 || first.transition !== "none") return;
+  first.end = second.end;
+  first.transition = second.transition;
+  first.transitionSeconds = second.transitionSeconds;
+  URL.revokeObjectURL(second.url);
+  state.clips.splice(index + 1, 1);
+  renderClipCards();
+  updateSummary();
+  saveDraft();
 }
 
 function updateLogoStage() {
@@ -703,6 +871,11 @@ function previewSegmentAt(time) {
     || state.preview.segments.at(-1);
 }
 
+function previewTransition(clip, nextClip) {
+  try { return selectedTransition(clip, nextClip); }
+  catch { return null; } // A short next clip must not prevent preview playback.
+}
+
 function updatePreviewCaption(time) {
   const offset = state.captionStyle.offsetMs / 1000;
   const index = $("#burnCaptions").checked
@@ -790,6 +963,8 @@ function updateTransitionPreview(time) {
   const freeze = refs.mixTransitionFreeze;
   video.style.transform = "";
   video.style.opacity = "";
+  // Cached pages from earlier versions have no transition image.
+  if (!freeze) return;
   freeze.style.transform = "";
   freeze.style.opacity = "";
   freeze.style.clipPath = "";
@@ -798,7 +973,7 @@ function updateTransitionPreview(time) {
   if (!segment) return;
   const previous = state.preview.segments[segment.index - 1];
   if (!previous) return;
-  const transition = selectedTransition(previous.clip, segment.clip);
+  const transition = previewTransition(previous.clip, segment.clip);
   if (!transition) return;
   if (time < segment.start || time >= segment.start + transition.duration) return;
   const key = transitionFreezeKey(previous.clip);
@@ -838,6 +1013,7 @@ function updateMixPreviewUI(time) {
   setRangeVisual(refs.mixPreviewSeek);
   updatePreviewCaption(safeTime);
   updateTransitionPreview(safeTime);
+  updatePreviewOverlays(safeTime);
 }
 
 function ensurePreviewAudioGraph() {
@@ -860,17 +1036,27 @@ function ensurePreviewAudioGraph() {
   return context;
 }
 
-function syncPreviewGains(segment) {
+function previewMusicGain(time) {
+  let gain = Number($("#musicVolume").value) / 100;
+  if (state.audioMix.fades && state.preview.total) gain *= Math.max(0, Math.min(1, time / 0.5, (state.preview.total - time) / 0.5));
+  if (state.audioMix.duck && state.narration?.duration) {
+    const envelope = Math.max(0, Math.min(1, time / 0.25, (state.narration.duration - time) / 0.25));
+    gain *= 1 - envelope * (1 - state.audioMix.duckPercent / 100);
+  }
+  return Math.max(0, gain);
+}
+
+function syncPreviewGains(segment, time = state.preview.globalTime) {
   if (!state.preview.gains) {
     refs.mixPreviewVideo.volume = Math.min(1, segment.clip.volume / 100);
     refs.mixPreviewNarration.volume = Math.min(1, Number($("#narrationVolume").value) / 100);
-    refs.mixPreviewMusic.volume = Math.min(1, Number($("#musicVolume").value) / 100);
+    refs.mixPreviewMusic.volume = Math.min(1, previewMusicGain(time));
     return;
   }
   const now = state.preview.audioContext.currentTime;
   state.preview.gains.video.gain.setTargetAtTime(segment.clip.volume / 100, now, 0.015);
   state.preview.gains.narration.gain.setTargetAtTime(Number($("#narrationVolume").value) / 100, now, 0.015);
-  state.preview.gains.music.gain.setTargetAtTime(Number($("#musicVolume").value) / 100, now, 0.015);
+  state.preview.gains.music.gain.setTargetAtTime(previewMusicGain(time), now, 0.015);
 }
 
 function syncPreviewAudio(time, shouldPlay) {
@@ -922,7 +1108,7 @@ async function loadMixPreviewAt(time, shouldPlay = false) {
   const clipTime = segment.clip.start + (safeTime - segment.start);
   if (Math.abs(refs.mixPreviewVideo.currentTime - clipTime) > 0.08) refs.mixPreviewVideo.currentTime = clipTime;
   refs.mixPreviewClipName.textContent = segment.clip.name;
-  syncPreviewGains(segment);
+  syncPreviewGains(segment, safeTime);
   syncPreviewAudio(safeTime, shouldPlay);
   updateMixPreviewUI(safeTime);
   if (shouldPlay) await refs.mixPreviewVideo.play();
@@ -954,18 +1140,21 @@ function runMixPreviewFrame() {
       .catch((error) => { pauseMixPreview(); showToast(error.message); });
     return;
   }
-  if (segment.end - time < 0.85 && selectedTransition(segment.clip, state.preview.segments[segment.index + 1]?.clip)) {
+  if (segment.end - time < 0.85 && previewTransition(segment.clip, state.preview.segments[segment.index + 1]?.clip)) {
     prepareTransitionFreeze(segment.clip).catch(() => {});
   }
   updateMixPreviewUI(time);
   syncPreviewAudio(time, true);
+  syncPreviewGains(segment, time);
   state.preview.frame = requestAnimationFrame(runMixPreviewFrame);
 }
 
 async function playMixPreview() {
   try {
     const context = ensurePreviewAudioGraph();
-    if (context?.state === "suspended") await context.resume();
+    // Keep video.play() in the original click activation; awaiting audio
+    // resume first can make browsers block the subsequent video play call.
+    if (context?.state === "suspended") context.resume().catch((error) => console.warn("Preview audio resume failed", error));
     if (state.preview.globalTime >= state.preview.total - 0.02) state.preview.globalTime = 0;
     state.preview.playing = true;
     refs.mixPreviewPlay.classList.add("is-playing");
@@ -997,7 +1186,7 @@ async function openMixPreview(startTime = 0) {
   const startSegment = previewSegmentAt(state.preview.globalTime);
   await loadMixPreviewAt(state.preview.globalTime, false);
   if (startSegment?.index > 0) await prepareTransitionFreeze(state.preview.segments[startSegment.index - 1].clip).catch(() => {});
-  if (startSegment && selectedTransition(startSegment.clip, state.preview.segments[startSegment.index + 1]?.clip)) {
+  if (startSegment && previewTransition(startSegment.clip, state.preview.segments[startSegment.index + 1]?.clip)) {
     prepareTransitionFreeze(startSegment.clip).catch(() => {});
   }
 }
@@ -1036,6 +1225,7 @@ function handleClipField(event) {
   const clip = state.clips.find((item) => item.id === card.dataset.id);
   if (!clip) return;
   const field = event.target.dataset.field;
+  if (field === "splitAt") return;
 
   if (field === "volume") {
     clip.volume = Math.round(Number(event.target.value));
@@ -1082,6 +1272,7 @@ async function setAudio(kind, file) {
     const duration = await getMediaDuration(file);
     if (state[kind]?.url) URL.revokeObjectURL(state[kind].url);
     state[kind] = { file, duration, url: URL.createObjectURL(file) };
+    state.remembered[kind] = { name: file.name, size: file.size, volume: Number($(`#${kind}Volume`).value) };
     $(`#${kind}Name`).textContent = file.name;
     $(`#${kind}Meta`).textContent = `${formatTime(duration)} · ${formatBytes(file.size)}`;
     $(`[data-remove="${kind}"]`).hidden = false;
@@ -1095,10 +1286,21 @@ async function setAudio(kind, file) {
 async function setCaption(file) {
   if (!file) return;
   try {
-    const cues = parseSrt(await file.text());
+    let cues = parseSrt(await file.text());
     if (!cues.length) throw new Error("زمان‌بندی معتبری داخل فایل SRT پیدا نشد.");
+    let saved = null;
+    try {
+      const draft = JSON.parse(localStorage.getItem("flow2short-draft") || "null")?.project?.caption;
+      const imported = JSON.parse(localStorage.getItem("flow2short-imported-recipe") || "null")?.project?.caption;
+      saved = state.remembered.caption?.name === file.name ? state.remembered.caption : draft?.name === file.name ? draft : imported;
+    } catch { /* ignore */ }
+    if (saved?.name === file.name && (!saved.size || saved.size === file.size) && Array.isArray(saved.cues)) {
+      const restored = saved.cues.filter((cue) => typeof cue.text === "string" && Number.isFinite(cue.start) && Number.isFinite(cue.end) && cue.end > cue.start);
+      if (restored.length) cues = restored.map((cue) => ({ start: cue.start, end: cue.end, text: cue.text }));
+    }
     const wordByWord = cues.every((cue) => !/\s/u.test(cue.text.trim()));
     state.caption = { file, cues, wordByWord, displayCues: [] };
+    state.remembered.caption = { name: file.name, size: file.size, burn: $("#burnCaptions").checked, cues };
     $("#captionName").textContent = file.name;
     $('[data-remove="caption"]').hidden = false;
     refreshCaptionDisplay();
@@ -1112,6 +1314,7 @@ async function setCaption(file) {
 function removeMedia(kind) {
   if (state[kind]?.url) URL.revokeObjectURL(state[kind].url);
   state[kind] = null;
+  state.remembered[kind] = null;
   $(`#${kind}Name`).textContent = "فایلی انتخاب نشده";
   $(`#${kind}Meta`).textContent = kind === "caption" ? "SRT کلمه‌به‌کلمه یا معمولی" : "MP3، WAV یا M4A";
   $(`[data-remove="${kind}"]`).hidden = true;
@@ -1119,6 +1322,7 @@ function removeMedia(kind) {
   if (kind === "caption") {
     refs.captionStylePreview.textContent = "YOUR NEXT BIG IDEA";
     updatePreviewCaption(state.preview.globalTime);
+    renderCaptionEditor();
   }
   updateSummary();
   saveDraft();
@@ -1141,11 +1345,13 @@ function getRecipe() {
         transition: clip.transition,
         transitionSeconds: clip.transitionSeconds,
       })),
-      narration: state.narration ? { name: state.narration.file.name, size: state.narration.file.size, volume: Number($("#narrationVolume").value) } : null,
-      music: state.music ? { name: state.music.file.name, size: state.music.file.size, volume: Number($("#musicVolume").value) } : null,
-      caption: state.caption ? { name: state.caption.file.name, burn: $("#burnCaptions").checked } : null,
+      narration: state.narration ? { name: state.narration.file.name, size: state.narration.file.size, volume: Number($("#narrationVolume").value) } : state.remembered.narration,
+      music: state.music ? { name: state.music.file.name, size: state.music.file.size, volume: Number($("#musicVolume").value) } : state.remembered.music,
+      caption: state.caption ? { name: state.caption.file.name, size: state.caption.file.size, burn: $("#burnCaptions").checked, cues: state.caption.cues } : state.remembered.caption,
       captionStyle: { ...state.captionStyle },
-      logo: state.logo ? { name: state.logo.file.name, size: state.logo.file.size } : null,
+      overlays: state.overlays.map(({ kind, text, name, sizeBytes, start, end, position, size }) => ({ kind, text, name, sizeBytes, start, end, position, size })),
+      audioMix: { ...state.audioMix },
+      logo: state.logo ? { name: state.logo.file.name, size: state.logo.file.size } : state.remembered.logo,
       logoStyle: { ...state.logoStyle },
       output: {
         name: safeFileName(refs.outputName.value),
@@ -1179,6 +1385,13 @@ async function importProject(file) {
   try {
     const recipe = JSON.parse(await file.text());
     if (recipe?.app !== "Flow2Short Studio" || !recipe?.project) throw new Error("این فایل، پروژه معتبر Flow2Short نیست.");
+    if (refs.mixPreviewDialog.open) closeMixPreview();
+    closePreview();
+    state.clips.forEach((clip) => URL.revokeObjectURL(clip.url));
+    state.clips = [];
+    renderClipCards();
+    ["narration", "music", "caption"].forEach((kind) => removeMedia(kind));
+    state.remembered = { narration: recipe.project.narration || null, music: recipe.project.music || null, caption: recipe.project.caption || null, logo: recipe.project.logo || null };
     refs.projectTitle.value = recipe.project.title || "پروژه Flow2Short";
     refs.outputName.value = recipe.project.output?.name || "YouTube-Short-Final";
     refs.resolution.value = recipe.project.output?.resolution || "1080";
@@ -1188,7 +1401,11 @@ async function importProject(file) {
     $("#musicVolume").value = recipe.project.music?.volume ?? 18;
     $("#burnCaptions").checked = recipe.project.caption?.burn ?? true;
     state.captionStyle = { ...state.captionStyle, ...(recipe.project.captionStyle || {}) };
+    state.audioMix = { duck: true, duckPercent: 30, fades: true, ...(recipe.project.audioMix || {}) };
+    syncAudioMixControls();
+    restoreOverlays(recipe.project.overlays);
     removeLogo(false);
+    state.remembered.logo = recipe.project.logo || null;
     state.logoStyle = { ...state.logoStyle, ...(recipe.project.logoStyle || {}) };
     applyLogoStyle();
     if (recipe.project.logo?.name) {
@@ -1201,6 +1418,7 @@ async function importProject(file) {
     syncGlobalRanges();
     updateSummary();
     localStorage.setItem("flow2short-imported-recipe", JSON.stringify(recipe));
+    if (state.settings.autosave) localStorage.setItem("flow2short-draft", JSON.stringify(recipe));
     showToast("تنظیمات پروژه باز شد. حالا فایل‌های رسانه‌ای هم‌نام را دوباره انتخاب کنید.");
     refs.dropZone.scrollIntoView({ behavior: "smooth", block: "center" });
   } catch (error) {
@@ -1223,6 +1441,7 @@ function loadPreferences() {
     $("#leaveWarningSetting").checked = state.settings.leaveWarning;
     const draft = JSON.parse(localStorage.getItem("flow2short-draft") || "null");
     if (draft?.project) {
+      state.remembered = { narration: draft.project.narration || null, music: draft.project.music || null, caption: draft.project.caption || null, logo: draft.project.logo || null };
       refs.projectTitle.value = draft.project.title || refs.projectTitle.value;
       refs.outputName.value = draft.project.output?.name || refs.outputName.value;
       refs.resolution.value = draft.project.output?.resolution || refs.resolution.value;
@@ -1232,6 +1451,8 @@ function loadPreferences() {
       $("#musicVolume").value = draft.project.music?.volume ?? 18;
       $("#burnCaptions").checked = draft.project.caption?.burn ?? true;
       state.captionStyle = { ...state.captionStyle, ...(draft.project.captionStyle || {}) };
+      state.audioMix = { ...state.audioMix, ...(draft.project.audioMix || {}) };
+      restoreOverlays(draft.project.overlays);
       state.logoStyle = { ...state.logoStyle, ...(draft.project.logoStyle || {}) };
       if (draft.project.logo?.name) {
         rememberedLogoName = draft.project.logo.name;
@@ -1242,9 +1463,17 @@ function loadPreferences() {
     localStorage.removeItem("flow2short-draft");
   }
   applyCaptionStyle();
+  syncAudioMixControls();
   applyLogoStyle();
   if (rememberedLogoName) $("#previewLogoName").textContent = `لوگو را دوباره انتخاب کنید: ${rememberedLogoName}`;
   setCaptionOffset(state.captionStyle.offsetMs, false);
+}
+
+function syncAudioMixControls() {
+  $("#autoDuck").checked = Boolean(state.audioMix.duck);
+  $("#audioFades").checked = Boolean(state.audioMix.fades);
+  $("#duckPercent").value = Math.max(10, Math.min(75, Number(state.audioMix.duckPercent) || 30));
+  $("#duckPercentValue").textContent = `${toFaDigits($("#duckPercent").value)}٪`;
 }
 
 function setCaptionOffset(value, persist = true, editingInput = null) {
@@ -1379,6 +1608,8 @@ function buildTransitionGraph(clips) {
 
 async function renderVideo() {
   if (!state.clips.length || state.rendering) return;
+  const missingImage = state.overlays.find((item) => item.kind === "image" && !item.file);
+  if (missingImage) return showToast(`تصویر «${missingImage.name}» را دوباره انتخاب کنید.`);
   state.rendering = true;
   state.cancelled = false;
   refs.renderButton.disabled = true;
@@ -1398,14 +1629,25 @@ async function renderVideo() {
     const height = size === 720 ? 1280 : 1920;
     const settings = encodeSettings();
     const segmentNames = [];
+    const sourceNames = new Map();
+    const sourceAudio = new Map();
+    const projectDuration = state.clips.reduce((sum, clip) => sum + clipDuration(clip), 0);
     const hasTransitions = state.clips.some((clip, index) => selectedTransition(clip, state.clips[index + 1]));
+    const frameExact = state.clips.length > 1;
 
     for (let index = 0; index < state.clips.length; index += 1) {
       if (state.cancelled) throw new DOMException("پردازش لغو شد.", "AbortError");
       const clip = state.clips[index];
-      const inputName = `input-${index}.${extensionOf(clip.file, "mp4")}`;
+      let inputName = sourceNames.get(clip.file);
+      if (!inputName) {
+        inputName = `input-${sourceNames.size}.${extensionOf(clip.file, "mp4")}`;
+        sourceNames.set(clip.file, inputName);
+        workingFiles.push(inputName);
+        await ffmpeg.writeFile(inputName, await fetchFileBytes(clip.file));
+        sourceAudio.set(inputName, await hasAudioStream(ffmpeg, inputName, sourceNames.size));
+      }
       const segmentName = `segment-${String(index).padStart(2, "0")}.mp4`;
-      workingFiles.push(inputName, segmentName);
+      workingFiles.push(segmentName);
       segmentNames.push(segmentName);
 
       updateRenderProgress(
@@ -1413,8 +1655,7 @@ async function renderVideo() {
         `آماده‌سازی کلیپ ${toFaDigits(index + 1)} از ${toFaDigits(state.clips.length)}`,
         clip.name,
       );
-      await ffmpeg.writeFile(inputName, await fetchFileBytes(clip.file));
-      const hasAudio = await hasAudioStream(ffmpeg, inputName, index);
+      const hasAudio = sourceAudio.get(inputName);
       const duration = clipDuration(clip);
       const args = ["-ss", formatDecimal(clip.start), "-t", formatDecimal(duration), "-i", inputName];
 
@@ -1438,29 +1679,36 @@ async function renderVideo() {
       );
       const result = await ffmpeg.exec(args);
       if (result !== 0) throw new Error(`پردازش کلیپ ${index + 1} کامل نشد.`);
-      await ffmpeg.deleteFile(inputName).catch(() => {});
     }
+    await cleanupFiles(ffmpeg, [...sourceNames.values()]);
 
-    const concatList = segmentNames.map((name) => `file '${name}'`).join("\n");
-    await ffmpeg.writeFile("concat.txt", new TextEncoder().encode(concatList));
-    workingFiles.push("concat.txt", "joined.mp4");
-    updateRenderProgress(0.65, "اتصال کلیپ‌ها", "کلیپ‌ها با ترتیب انتخاب‌شده به هم متصل می‌شوند.");
-    const concatResult = await ffmpeg.exec(["-f", "concat", "-safe", "0", "-i", "concat.txt", "-c", "copy", "joined.mp4"]);
-    if (concatResult !== 0) throw new Error("اتصال کلیپ‌ها کامل نشد.");
-    if (hasTransitions) {
+    if (frameExact) {
       if (state.cancelled) throw new DOMException("پردازش لغو شد.", "AbortError");
-      updateRenderProgress(0.71, "ساخت ترنزیشن‌ها", "جلوهٔ انتخاب‌شده برای هر گذار روی تصویر اعمال می‌شود.");
+      updateRenderProgress(0.65, hasTransitions ? "ساخت ترنزیشن‌ها" : "اتصال دقیق کلیپ‌ها", "تصویر و صدا با زمان‌بندی دقیق متصل می‌شوند.");
       const { graph, output, duration } = buildTransitionGraph(state.clips);
-      workingFiles.push("transitioned.mp4");
+      workingFiles.push("transitioned.mp4", "joined-audio.m4a");
       const transitionArgs = segmentNames.flatMap((name) => ["-i", name]);
       transitionArgs.push("-filter_complex", graph, "-map", output, "-an", "-c:v", "libx264", "-preset", settings.preset, "-crf", settings.crf, "-r", "30", "-t", formatDecimal(duration), "-movflags", "+faststart", "transitioned.mp4");
       const transitionResult = await ffmpeg.exec(transitionArgs);
-      if (transitionResult !== 0) throw new Error("ساخت ترنزیشن‌ها کامل نشد. گزارش فنی را بررسی کنید.");
+      if (transitionResult !== 0) throw new Error("اتصال تصویری کلیپ‌ها کامل نشد. گزارش فنی را بررسی کنید.");
+      if (state.cancelled) throw new DOMException("پردازش لغو شد.", "AbortError");
+      updateRenderProgress(0.72, "هماهنگ‌سازی صدای کلیپ‌ها", "صدا دقیقاً روی مرز برش‌ها قرار می‌گیرد.");
+      const audioParts = state.clips.map((clip, index) => `[${index}:a]atrim=duration=${formatDecimal(clipDuration(clip))},asetpts=PTS-STARTPTS[clipAudio${index}]`);
+      audioParts.push(`${state.clips.map((_, index) => `[clipAudio${index}]`).join("")}concat=n=${state.clips.length}:v=0:a=1[clipAudioOut]`);
+      const audioArgs = [...segmentNames.flatMap((name) => ["-i", name]), "-filter_complex", audioParts.join(";"), "-map", "[clipAudioOut]", "-c:a", "aac", "-b:a", settings.audio, "-ar", "48000", "-ac", "2", "-t", formatDecimal(projectDuration), "joined-audio.m4a"];
+      if (await ffmpeg.exec(audioArgs) !== 0) throw new Error("اتصال صدای کلیپ‌ها کامل نشد.");
+    } else {
+      const concatList = segmentNames.map((name) => `file '${name}'`).join("\n");
+      await ffmpeg.writeFile("concat.txt", new TextEncoder().encode(concatList));
+      workingFiles.push("concat.txt", "joined.mp4");
+      updateRenderProgress(0.65, "اتصال کلیپ‌ها", "تصویر و صدا آماده می‌شوند.");
+      const concatResult = await ffmpeg.exec(["-f", "concat", "-safe", "0", "-i", "concat.txt", "-c", "copy", "joined.mp4"]);
+      if (concatResult !== 0) throw new Error("اتصال کلیپ‌ها کامل نشد.");
     }
     await cleanupFiles(ffmpeg, [...segmentNames, "concat.txt"]);
 
-    const audioSourceIndex = hasTransitions ? 1 : 0;
-    const finalArgs = hasTransitions ? ["-i", "transitioned.mp4", "-i", "joined.mp4"] : ["-i", "joined.mp4"];
+    const audioSourceIndex = frameExact ? 1 : 0;
+    const finalArgs = frameExact ? ["-i", "transitioned.mp4", "-i", "joined-audio.m4a"] : ["-i", "joined.mp4"];
     const audioLabels = ["[a0]"];
     const filterParts = [`[${audioSourceIndex}:a]volume=1,aresample=48000[a0]`];
     let inputIndex = audioSourceIndex + 1;
@@ -1480,12 +1728,20 @@ async function renderVideo() {
       await ffmpeg.writeFile(name, await fetchFileBytes(state.music.file));
       workingFiles.push(name);
       finalArgs.push("-stream_loop", "-1", "-i", name);
-      filterParts.push(`[${inputIndex}:a]volume=${(Number($("#musicVolume").value) / 100).toFixed(2)},aresample=48000[a${inputIndex}]`);
+      let musicFilter = `[${inputIndex}:a]volume=${(Number($("#musicVolume").value) / 100).toFixed(2)},aresample=48000`;
+      if (state.audioMix.duck && state.narration?.duration) {
+        const activity = `max(0,min(1,min(t/0.25,(${state.narration.duration.toFixed(3)}-t)/0.25)))`;
+        musicFilter += `,volume='1-(1-${(state.audioMix.duckPercent / 100).toFixed(2)})*${activity}':eval=frame`;
+      }
+      if (state.audioMix.fades) {
+        musicFilter += `,afade=t=in:st=0:d=0.5,afade=t=out:st=${Math.max(0, projectDuration - 0.5).toFixed(3)}:d=0.5`;
+      }
+      filterParts.push(`${musicFilter}[a${inputIndex}]`);
       audioLabels.push(`[a${inputIndex}]`);
       inputIndex += 1;
     }
 
-    let burnCaptions = Boolean(state.caption && $("#burnCaptions").checked);
+    const burnCaptions = Boolean(state.caption && $("#burnCaptions").checked);
     if (state.caption) {
       await ffmpeg.writeFile("captions.ass", new TextEncoder().encode(buildAssCaptions(width, height)));
       const subtitleFont = new Uint8Array(await fetch(new URL("./vendor/fonts/DejaVuSans.ttf", APP_BASE_URL)).then((response) => response.arrayBuffer()));
@@ -1501,6 +1757,20 @@ async function renderVideo() {
       await ffmpeg.writeFile("logo.png", logoInfo.bytes);
       workingFiles.push("logo.png");
       finalArgs.push("-loop", "1", "-framerate", "30", "-i", "logo.png");
+      inputIndex += 1;
+    }
+
+    const overlayInputs = [];
+    for (const [index, item] of state.overlays.entries()) {
+      if (item.kind === "image" && !item.file) throw new Error(`تصویر «${item.name}» را در بخش متن و تصویر دوباره انتخاب کنید.`);
+      if (item.end <= 0 || item.start >= projectDuration) continue;
+      const png = await overlayPngBytes(item, width, height);
+      const name = `overlay-${index}.png`;
+      await ffmpeg.writeFile(name, png.bytes);
+      workingFiles.push(name);
+      finalArgs.push("-loop", "1", "-framerate", "30", "-i", name);
+      overlayInputs.push({ item, inputIndex, width: png.width, height: png.height });
+      inputIndex += 1;
     }
 
     const output = "final.mp4";
@@ -1510,32 +1780,39 @@ async function renderVideo() {
       const parts = audioLabels.length > 1
         ? [...filterParts, `${audioLabels.join("")}amix=inputs=${audioLabels.length}:duration=first:dropout_transition=2:normalize=0,alimiter=limit=0.95[aout]`]
         : [];
+      let source = "[0:v]";
+      if (withCaptions) {
+        parts.push(`${source}subtitles=captions.ass:fontsdir=.[captioned]`);
+        source = "[captioned]";
+      }
       if (logoInfo) {
         const { x, y } = logoCoordinates(width, height, logoInfo.width, logoInfo.height);
-        const source = withCaptions ? "[captioned]" : "[0:v]";
-        if (withCaptions) parts.push("[0:v]subtitles=captions.ass:fontsdir=.[captioned]");
-        parts.push(`${source}[${logoInputIndex}:v]overlay=${x}:${y}:shortest=1:format=auto,format=yuv420p[vout]`);
+        parts.push(`${source}[${logoInputIndex}:v]overlay=${x}:${y}:shortest=1:format=auto[visualLogo]`);
+        source = "[visualLogo]";
+      }
+      for (const [index, overlay] of overlayInputs.entries()) {
+        const { item, inputIndex: imageIndex, width: imageWidth, height: imageHeight } = overlay;
+        const x = Math.round((width - imageWidth) / 2);
+        const y = item.position === "top" ? Math.round(height * 0.17)
+          : item.position === "bottom" ? Math.round(height * 0.75 - imageHeight)
+            : Math.round((height - imageHeight) / 2);
+        const destination = `[visual${index}]`;
+        parts.push(`${source}[${imageIndex}:v]overlay=${x}:${Math.max(0, y)}:enable='between(t,${item.start.toFixed(3)},${item.end.toFixed(3)})':shortest=1:format=auto${destination}`);
+        source = destination;
       }
       if (parts.length) args.push("-filter_complex", parts.join(";"));
-      args.push("-map", logoInfo ? "[vout]" : "0:v:0", "-map", audioLabels.length > 1 ? "[aout]" : `${audioSourceIndex}:a:0`);
-      if (withCaptions && !logoInfo) args.push("-vf", "subtitles=captions.ass:fontsdir=.");
-      if (withCaptions || logoInfo) args.push("-c:v", "libx264", "-preset", settings.preset, "-crf", settings.crf);
+      args.push("-map", source === "[0:v]" ? "0:v:0" : source, "-map", audioLabels.length > 1 ? "[aout]" : `${audioSourceIndex}:a:0`);
+      if (withCaptions || logoInfo || overlayInputs.length) args.push("-c:v", "libx264", "-preset", settings.preset, "-crf", settings.crf);
       else args.push("-c:v", "copy");
-      args.push("-c:a", "aac", "-b:a", settings.audio, "-ar", "48000", "-movflags", "+faststart", "-shortest", output);
+      args.push("-c:a", "aac", "-b:a", settings.audio, "-ar", "48000", "-movflags", "+faststart", "-shortest", "-t", formatDecimal(projectDuration), output);
       return args;
     };
 
     updateRenderProgress(0.76, "میکس صدا و ساخت خروجی", logoInfo ? "لوگو روی تمام تصویرها قرار می‌گیرد." : burnCaptions ? "زیرنویس روی تصویر تثبیت می‌شود." : "صداهای انتخاب‌شده میکس می‌شوند.");
-    let finalResult = await ffmpeg.exec(buildFinalArgs(burnCaptions));
-
-    if (finalResult !== 0 && burnCaptions) {
-      addRenderLog("موتور مرورگر از تثبیت زیرنویس پشتیبانی نکرد؛ خروجی بدون زیرنویس تصویری دوباره ساخته می‌شود.");
-      burnCaptions = false;
-      await ffmpeg.deleteFile(output).catch(() => {});
-      finalResult = await ffmpeg.exec(buildFinalArgs(false));
-    }
-
-    if (finalResult !== 0) throw new Error(logoInfo ? "ثبت لوگو روی ویدئو انجام نشد. گزارش فنی را بررسی کنید." : "ساخت فایل نهایی کامل نشد. گزارش فنی را بررسی کنید.");
+    const finalResult = await ffmpeg.exec(buildFinalArgs(burnCaptions));
+    if (finalResult !== 0) throw new Error(burnCaptions
+      ? "تثبیت زیرنویس در خروجی انجام نشد؛ خروجی ناقص ارائه نمی‌شود. گزارش فنی را بررسی کنید."
+      : "ساخت فایل نهایی کامل نشد. گزارش فنی را بررسی کنید.");
     updateRenderProgress(0.96, "در حال آماده‌سازی دانلود", "فایل نهایی از حافظه پردازش خوانده می‌شود.");
     const outputData = await ffmpeg.readFile(output);
     const blob = new Blob([outputData.buffer], { type: "video/mp4" });
@@ -1563,6 +1840,7 @@ async function renderVideo() {
     refs.cancelRenderButton.hidden = true;
     refs.closeRenderButton.hidden = false;
   } finally {
+    if (state.ffmpegLoaded && state.ffmpeg) await cleanupFiles(state.ffmpeg, workingFiles);
     state.rendering = false;
     updateSummary();
   }
@@ -1648,6 +1926,11 @@ function wireEvents() {
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (!card || !action) return;
     if (action === "preview") openPreview(state.clips.find((clip) => clip.id === card.dataset.id));
+    if (action === "split" || action === "join") {
+      const index = state.clips.findIndex((clip) => clip.id === card.dataset.id);
+      if (action === "split") splitClip(index, Number($("[data-field=splitAt]", card).value));
+      else joinClip(index);
+    }
     if (action === "preview-transition") {
       const index = state.clips.findIndex((clip) => clip.id === card.dataset.id);
       const boundary = state.clips.slice(0, index + 1).reduce((sum, clip) => sum + clipDuration(clip), 0);
@@ -1658,6 +1941,10 @@ function wireEvents() {
     if (action === "down") moveClip(card.dataset.id, 1);
     if (action === "delete") deleteClip(card.dataset.id);
   });
+  $("#editTimeline").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-timeline-time]");
+    if (button) openMixPreview(Number(button.dataset.timelineTime)).catch((error) => showToast(error.message));
+  });
 
   $$('[data-pick="narration"], [data-pick="music"], [data-pick="caption"]').forEach((button) => {
     button.addEventListener("click", () => $(`#${button.dataset.pick}Input`).click());
@@ -1665,6 +1952,116 @@ function wireEvents() {
   refs.narrationInput.addEventListener("change", (event) => setAudio("narration", event.target.files[0]));
   refs.musicInput.addEventListener("change", (event) => setAudio("music", event.target.files[0]));
   refs.captionInput.addEventListener("change", (event) => setCaption(event.target.files[0]));
+  $("#captionAddCue").addEventListener("click", () => {
+    if (!state.caption) return showToast("ابتدا فایل SRT وارد کنید.");
+    const start = Math.max(0, state.preview.globalTime || state.caption.cues.at(-1)?.end || 0);
+    state.caption.cues.push({ start, end: start + 0.5, text: "New text" });
+    state.caption.cues.sort((a, b) => a.start - b.start);
+    refreshCaptionDisplay();
+    saveDraft();
+  });
+  $("#captionDownloadSrt").addEventListener("click", downloadEditedSrt);
+  $("#addOverlay").addEventListener("click", () => {
+    const file = $("#overlayImage").files[0] || null;
+    const text = $("#overlayText").value.trim();
+    const start = Number($("#overlayStart").value);
+    const end = Number($("#overlayEnd").value);
+    if (!file && !text) return showToast("متن یا تصویر را انتخاب کنید.");
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) return showToast("پایان لایه باید بعد از شروع آن باشد.");
+    if (file && !/^(image\/png|image\/jpeg|image\/webp)$/i.test(file.type)) return showToast("برای تصویر از PNG، JPG یا WebP استفاده کنید.");
+    state.overlays.push({ id: uid(), kind: file ? "image" : "text", text, file,
+      name: file?.name || "", sizeBytes: file?.size || 0, url: file ? URL.createObjectURL(file) : null,
+      start, end, position: $("#overlayPosition").value, size: Number($("#overlaySize").value) });
+    $("#overlayText").value = "";
+    $("#overlayImage").value = "";
+    renderOverlays();
+    saveDraft();
+  });
+  $("#overlayList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-overlay-action]");
+    const row = button?.closest("[data-overlay-id]");
+    if (!row) return;
+    const item = state.overlays.find((overlay) => overlay.id === row.dataset.overlayId);
+    if (!item) return;
+    if (button.dataset.overlayAction === "delete") {
+      if (item.url) URL.revokeObjectURL(item.url);
+      state.overlays = state.overlays.filter((overlay) => overlay !== item);
+      renderOverlays();
+      saveDraft();
+    } else openMixPreview(item.start).catch((error) => showToast(error.message));
+  });
+  $("#overlayList").addEventListener("change", (event) => {
+    if (!event.target.matches("[data-overlay-relink]")) return;
+    const file = event.target.files[0];
+    const item = state.overlays.find((overlay) => overlay.id === event.target.closest("[data-overlay-id]").dataset.overlayId);
+    if (!file || !item) return;
+    if (!/^(image\/png|image\/jpeg|image\/webp)$/i.test(file.type)) return showToast("فرمت تصویر پشتیبانی نمی‌شود.");
+    if ((item.name && file.name !== item.name) || (item.sizeBytes && file.size !== item.sizeBytes)) return showToast(`فایل اصلی «${item.name}» را انتخاب کنید.`);
+    item.file = file;
+    item.url = URL.createObjectURL(file);
+    item.name = file.name;
+    item.sizeBytes = file.size;
+    renderOverlays();
+    saveDraft();
+  });
+  $("#overlayList").addEventListener("change", (event) => {
+    const field = event.target.dataset.overlayField;
+    if (!field) return;
+    const item = state.overlays.find((overlay) => overlay.id === event.target.closest("[data-overlay-id]")?.dataset.overlayId);
+    if (!item) return;
+    const value = ["start", "end", "size"].includes(field) ? Number(event.target.value) : event.target.value.trim();
+    const updated = { ...item, [field]: value };
+    if (!Number.isFinite(updated.start) || !Number.isFinite(updated.end) || updated.start < 0 || updated.end <= updated.start || (updated.kind === "text" && !updated.text)) {
+      event.target.value = item[field];
+      return showToast("زمان‌بندی یا متن لایه معتبر نیست.");
+    }
+    item[field] = value;
+    renderOverlays();
+    saveDraft();
+  });
+  $("#showSafeGuide").addEventListener("change", (event) => {
+    $("#shortsSafeGuide").hidden = !event.target.checked;
+  });
+  for (const id of ["autoDuck", "audioFades", "duckPercent"]) {
+    $("#" + id).addEventListener(id === "duckPercent" ? "input" : "change", () => {
+      state.audioMix = { duck: $("#autoDuck").checked, duckPercent: Number($("#duckPercent").value), fades: $("#audioFades").checked };
+      $("#duckPercentValue").textContent = `${toFaDigits(state.audioMix.duckPercent)}٪`;
+      if (state.preview.segments[state.preview.index]) syncPreviewGains(state.preview.segments[state.preview.index]);
+      saveDraft();
+    });
+  }
+  $("#captionCueList").addEventListener("change", (event) => {
+    const row = event.target.closest("[data-cue-index]");
+    const field = event.target.dataset.cueField;
+    if (!row || !field || !state.caption) return;
+    const cue = state.caption.cues[Number(row.dataset.cueIndex)];
+    if (!cue) return;
+    const value = field === "text" ? event.target.value.trim() : Number(event.target.value);
+    const candidate = { ...cue, [field]: value };
+    if (!candidate.text || !Number.isFinite(candidate.start) || !Number.isFinite(candidate.end) || candidate.start < 0 || candidate.end - candidate.start < 0.02) {
+      event.target.value = cue[field];
+      return showToast("متن نباید خالی باشد و پایان باید بعد از شروع قرار بگیرد.");
+    }
+    Object.assign(cue, candidate);
+    state.caption.cues.sort((a, b) => a.start - b.start);
+    refreshCaptionDisplay();
+    saveDraft();
+  });
+  $("#captionCueList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-cue-action]");
+    const row = button?.closest("[data-cue-index]");
+    if (!row || !state.caption) return;
+    const index = Number(row.dataset.cueIndex);
+    if (button.dataset.cueAction === "delete") {
+      state.caption.cues.splice(index, 1);
+      refreshCaptionDisplay();
+      saveDraft();
+    } else if (button.dataset.cueAction === "jump") {
+      const time = Math.max(0, state.caption.cues[index].start + state.captionStyle.offsetMs / 1000);
+      if (refs.mixPreviewDialog.open) loadMixPreviewAt(time, state.preview.playing).catch((error) => showToast(error.message));
+      else openMixPreview(time).catch((error) => showToast(error.message));
+    }
+  });
   $("#chooseLogo").addEventListener("click", () => refs.logoInput.click());
   $("#previewChooseLogo").addEventListener("click", () => refs.previewLogoInput.click());
   refs.logoInput.addEventListener("change", (event) => setLogo(event.target.files[0]));
@@ -1689,6 +2086,7 @@ function wireEvents() {
     input.addEventListener("input", () => {
       $(`#${valueId}`).textContent = `${toFaDigits(input.value)}٪`;
       setRangeVisual(input);
+      if (state.remembered[id === "narrationVolume" ? "narration" : "music"]) state.remembered[id === "narrationVolume" ? "narration" : "music"].volume = Number(input.value);
       const segment = state.preview.segments[state.preview.index];
       if (segment) syncPreviewGains(segment);
       saveDraft();
@@ -1733,8 +2131,20 @@ function wireEvents() {
     loadMixPreviewAt(Math.min(firstTime, Math.max(0, state.preview.total - 0.01)), state.preview.playing)
       .catch((error) => showToast(error.message));
   });
+  $("#editCurrentCaption").addEventListener("click", () => {
+    if (!state.caption) return showToast("ابتدا فایل SRT وارد کنید.");
+    const cueTime = state.preview.globalTime - state.captionStyle.offsetMs / 1000;
+    const index = state.caption.cues.findIndex((cue) => cueTime >= cue.start && cueTime < cue.end);
+    if (index < 0) return showToast("در این لحظه زیرنویسی نیست؛ روی یک کلمه توقف کنید.");
+    closeMixPreview();
+    $("#captionEditor").open = true;
+    const input = $(`[data-cue-index="${index}"] [data-cue-field="text"]`);
+    input?.scrollIntoView({ behavior: "smooth", block: "center" });
+    input?.focus();
+  });
   $("#captionOffsetReset").addEventListener("click", () => setCaptionOffset(0));
   $("#burnCaptions").addEventListener("change", () => {
+    if (state.remembered.caption) state.remembered.caption.burn = $("#burnCaptions").checked;
     updatePreviewCaption(state.preview.globalTime);
     saveDraft();
   });
@@ -1814,6 +2224,18 @@ function wireEvents() {
 async function registerServiceWorker() {
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     try {
+      // A local package is already available from its own server. An installed
+      // worker can serve an earlier HTML shell with this package's newer JS.
+      if (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.filter((registration) => registration.scope.startsWith(APP_BASE_URL.href))
+          .map((registration) => registration.unregister()));
+        if ("caches" in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.filter((key) => key.startsWith("flow2short-studio-")).map((key) => caches.delete(key)));
+        }
+        return;
+      }
       await navigator.serviceWorker.register("./service-worker.js", { scope: "./" });
     } catch (error) {
       console.warn("Service worker registration failed", error);
@@ -1833,4 +2255,23 @@ function init() {
   registerServiceWorker();
 }
 
-init();
+async function startApp() {
+  if (document.documentElement.dataset.appVersion === "1.9") return init();
+  // A previously installed service worker may combine an old HTML page with
+  // new JS. Refetch the page without its cached URL before wiring any events.
+  if (location.protocol.startsWith("http")) {
+    try {
+      const freshUrl = new URL(`./index.html?flow2short-refresh=${Date.now()}`, APP_BASE_URL);
+      const response = await fetch(freshUrl, { cache: "no-store" });
+      if (response.ok && (await response.text()).includes('data-app-version="1.9"')) {
+        const reloadUrl = new URL(location.href);
+        reloadUrl.searchParams.set("flow2short-ui", `1.9-${Date.now()}`);
+        location.replace(reloadUrl.href);
+        return;
+      }
+    } catch (error) { console.warn("Could not refresh the app shell", error); }
+  }
+  document.body.innerHTML = '<main style="max-width:36rem;margin:12vh auto;padding:2rem;font:18px/2 sans-serif;direction:rtl"><h1>نسخهٔ صفحه و برنامه هماهنگ نیست</h1><p>پنجرهٔ اجرای نسخهٔ قبلی را ببندید و Flow2Short نسخهٔ ۱.۹ را دوباره اجرا کنید. سپس این صفحه را تازه‌سازی کنید.</p><button type="button" onclick="location.reload()" style="padding:.7rem 1.5rem;cursor:pointer">تازه‌سازی صفحه</button></main>';
+}
+
+startApp();
