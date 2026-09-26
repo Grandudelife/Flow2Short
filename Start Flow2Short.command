@@ -9,7 +9,7 @@ port="43121"
 if command -v python3 >/dev/null 2>&1; then
   # Each package gets its own server if an earlier version is still running.
   port="$(python3 "$script_dir/server/select_port.py")"
-  server_command=(python3 -m http.server "$port" --bind 127.0.0.1 --directory "$app_dir")
+  server_command=(python3 "$script_dir/server/local_server.py" "$port" "$app_dir")
 elif command -v ruby >/dev/null 2>&1; then
   port="$(ruby -rsocket -e '(43121..43220).each { |p| begin; s = TCPServer.new("127.0.0.1", p); s.close; puts p; break; rescue Errno::EADDRINUSE; end }')"
   server_command=(ruby -run -ehttpd "$app_dir" -p"$port" -b127.0.0.1)

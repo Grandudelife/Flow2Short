@@ -25,7 +25,7 @@ Unlike a general-purpose editor, Flow2Short Studio makes the repeated AI-short w
 ## Operating Context
 
 - Input clips are typically vertical Google Flow MP4 videos.
-- Narration usually comes from Google AI Studio TTS.
+- Narration can be synthesized in Flow2Short with Google Gemini TTS and one saved API key, or imported from a local audio file.
 - The final target is an English YouTube Short around 50–60 seconds.
 - The user works mainly on a MacBook and may also use Windows or an iPhone.
 - The app must remain useful offline after its assets are installed or cached.

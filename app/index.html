@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fa" dir="rtl" data-app-version="1.9">
+<html lang="fa" dir="rtl" data-app-version="2.3.0">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -10,7 +10,7 @@
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.png" type="image/png" sizes="48x48" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-    <link rel="stylesheet" href="./styles.css?v=1.9" />
+    <link rel="stylesheet" href="./styles.css?v=2.3.0" />
   </head>
   <body>
     <a class="skip-link" href="#workspace">رفتن به محیط تدوین</a>
@@ -69,6 +69,10 @@
             <span class="step-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m4 17 5-5 3 3 3-4 5 6"/></svg></span>
             <span><strong>واترمارک</strong><small>لوگو و جایگاه</small></span>
           </a>
+          <a class="step-link" href="#thumbnailStep" data-step="thumbnailStep">
+            <span class="step-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.4"/><path d="m4 17 6-6 3 3 3-4 4 5"/></svg></span>
+            <span><strong>تامبنیل</strong><small>کاور ویدئو</small></span>
+          </a>
           <a class="step-link" href="#exportStep" data-step="exportStep">
             <span class="step-icon"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 14v7h14v-7"/></svg></span>
             <span><strong>خروجی</strong><small>بررسی و ساخت</small></span>
@@ -77,7 +81,7 @@
 
         <div class="privacy-note">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-3.6 8-10V5l-8-3-8 3v7c0 6.4 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
-          <p>فایل‌ها از دستگاه شما خارج نمی‌شوند.</p>
+          <p>فایل‌ها محلی می‌مانند؛ مگر رونویسی که خودتان فعال کنید.</p>
         </div>
       </aside>
 
@@ -145,7 +149,7 @@
             <article class="media-panel narration-panel">
               <div class="media-panel-head">
                 <span class="media-type-icon"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M8 8v4a4 4 0 0 0 8 0V8"/><path d="M5 12a7 7 0 0 0 14 0"/><path d="M12 19v3"/></svg></span>
-                <div><h3>نریشن</h3><p>خروجی Google AI Studio</p></div>
+                <div><h3>نریشن</h3><p>فایل خودتان یا صدای ساخته‌شده در همین برنامه</p></div>
                 <button class="small-action" data-pick="narration" type="button">انتخاب فایل</button>
               </div>
               <input id="narrationInput" type="file" accept="audio/*,.mp3,.wav,.m4a" hidden />
@@ -172,6 +176,32 @@
               <label class="volume-control"><span>بلندی موسیقی</span><input id="musicVolume" type="range" min="0" max="100" value="18" /><output id="musicVolumeValue">۱۸٪</output></label>
             </article>
           </div>
+          <div class="speech-workspace" id="speechWorkspace"><article class="voice-studio">
+            <div><h3>استودیوی گفتار Google</h3><p>متن انگلیسی را وارد کنید و صدا، لحن و سرعت خوانش را تعیین کنید. صدای ساخته‌شده مستقیم به نریشن پروژه افزوده می‌شود.</p></div>
+            <label>متن نریشن <textarea id="ttsScript" rows="5" maxlength="5000" dir="auto" placeholder="Write your narration here..."></textarea></label>
+            <div class="voice-options">
+              <label>نوع صدا <select id="ttsGender"><option value="female">زن</option><option value="male">مرد</option><option value="neutral">خنثی</option></select></label>
+              <label class="sr-only">صدای گوینده <select id="ttsVoice"><option value="">ابتدا کلید Google را تنظیم کنید</option></select></label>
+              <label>مدل <select id="ttsModel"><option value="gemini-3.8-flash-tts">کیفیت استودیویی</option><option value="gemini-3.8-flash-lite-tts">سریع‌تر و اقتصادی‌تر</option></select></label>
+              <label>لحن <select id="ttsTone"><option value="clear, confident and engaging">شفاف و مطمئن</option><option value="energetic and upbeat">پرانرژی</option><option value="warm and conversational">گرم و محاوره‌ای</option><option value="calm and professional">آرام و حرفه‌ای</option><option value="dramatic and suspenseful">داستانی و پرتعلیق</option></select></label>
+              <label>سرعت خوانش <select id="ttsPace"><option value="natural pace">طبیعی</option><option value="speaking slowly">آهسته</option><option value="speaking rapidly">سریع</option></select></label>
+            </div>
+            <div class="voice-picker"><div class="voice-picker-head"><strong>انتخاب گوینده</strong><span>برای شنیدن نمونه، دکمهٔ پخش هر صدا را بزنید. نمونه از Google ساخته می‌شود و ممکن است سهمیه مصرف کند.</span></div><input id="voiceSearch" type="search" placeholder="جست‌وجوی نام یا ویژگی صدا…" aria-label="جست‌وجوی گوینده" /><div id="voiceGallery" class="voice-gallery" role="radiogroup" aria-label="انتخاب گوینده"><p>پس از اتصال Google، صداها اینجا نمایش داده می‌شوند.</p></div><button id="voiceShowAll" type="button" class="small-action neutral" hidden>نمایش همهٔ صداها</button><audio id="voiceSamplePlayer" controls hidden></audio><p id="voiceSampleStatus" role="status" aria-live="polite"></p></div>
+            <label>راهنمای لحن دلخواه (اختیاری) <input id="ttsStyle" maxlength="160" dir="auto" placeholder="e.g. gently curious, with a short pause before the last line" /></label>
+            <label class="voice-check"><input id="ttsWithCaptions" type="checkbox" checked /> پس از آماده‌شدن صدا، زیرنویس دقیق کلمه‌ای و استاندارد هم ساخته شود</label>
+            <div class="voice-actions"><button id="ttsGenerate" class="voice-primary" type="button">تبدیل متن به گفتار ←</button><button id="ttsDownload" class="small-action neutral" type="button" disabled>دانلود صدای WAV</button></div><audio id="ttsPlayer" controls hidden></audio>
+            <p id="ttsStatus" role="status" aria-live="polite">برای شروع، کلید API گوگل را یک‌بار در تنظیمات برنامه ثبت کنید.</p>
+          </article>
+          <article class="transcribe-panel" id="transcriptionWorkspace">
+            <div><h3>ساخت زیرنویس انگلیسی از صدا</h3><p>با نریشن پروژه یا فایل صوتی جداگانه؛ برای فایل جداگانه نیازی به ساخت نریشن ندارید.</p></div>
+            <div class="transcribe-controls">
+              <label>منبع صدا <select id="transcribeSource"><option value="narration">نریشن پروژه</option><option value="file">فایل صوتی جداگانه</option></select></label>
+              <label id="transcribeFileWrap">افزودن فایل صوتی <input id="transcribeFile" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.flac" /><span id="transcribeFileName">اگر نریشن ندارید، اینجا فایل صدا انتخاب کنید.</span></label>
+            </div>
+            <button class="voice-primary" id="transcribeButton" type="button">ساخت زیرنویس از صدا ←</button>
+            <p id="transcribeStatus" role="status" aria-live="polite">پس از ساخت، خروجی کلمه‌ای و استاندارد را همین‌جا دریافت کنید.</p>
+            <div class="speech-downloads"><button type="button" data-download-caption="word" disabled>دانلود SRT کلمه‌ای</button><button type="button" data-download-caption="standard" disabled>دانلود SRT استاندارد</button></div>
+          </article></div>
           <div class="audio-smart-panel">
             <label><input id="autoDuck" type="checkbox" checked /> هنگام نریشن، موسیقی خودکار آرام شود</label>
             <label>بلندی موسیقی زیر نریشن <input id="duckPercent" type="range" min="10" max="75" step="5" value="30" /><output id="duckPercentValue">۳۰٪</output></label>
@@ -183,7 +213,7 @@
           <div class="section-heading compact">
             <div>
               <h2 id="captionHeading">زیرنویس انگلیسی</h2>
-              <p>فایل SRT کلمه‌به‌کلمه را بارگذاری کنید و زمان و ظاهر آن را تنظیم کنید.</p>
+              <p>از نریشن زیرنویس خودکار بسازید یا SRT وارد کنید؛ متن و زمان را همین‌جا اصلاح کنید.</p>
             </div>
           </div>
 
@@ -203,6 +233,8 @@
               <i aria-hidden="true"></i>
             </label>
           </article>
+
+          <p class="caption-source-link">برای ساخت زیرنویس از نریشن یا فایل صوتی مستقل، به <a href="#speechWorkspace">استودیوی گفتار و زیرنویس</a> بروید. برای اصلاح دستی، ویرایشگر پایین را باز کنید.</p>
 
           <div class="caption-studio" id="captionStudio">
             <div class="caption-style-stage" aria-label="پیش‌نمایش ظاهر زیرنویس">
@@ -234,6 +266,7 @@
                   <option value="3">پانچ ۳ کلمه‌ای</option>
                   <option value="4">پانچ ۴ کلمه‌ای</option>
                   <option value="1">تک‌کلمه‌ای</option>
+                  <option value="standard">استاندارد (جمله‌ای)</option>
                 </select>
                 <p id="captionGroupHelp">هر کلمه به عبارت اضافه می‌شود؛ پس از چند کلمه، عبارت بعدی شروع می‌شود. برای این حالت، هر ورودی SRT باید یک کلمه باشد.</p>
               </div>
@@ -252,7 +285,7 @@
           <details class="caption-editor" id="captionEditor">
             <summary>ویرایش دقیق متن و زمان زیرنویس <span id="captionEditorCount"></span></summary>
             <p>زمان‌ها برحسب ثانیهٔ کل ویدئو هستند؛ جابه‌جایی کلی زیرنویس جداگانه روی همهٔ ردیف‌ها اعمال می‌شود.</p>
-            <div class="caption-editor-actions"><button id="captionAddCue" type="button">افزودن ردیف</button><button id="captionDownloadSrt" type="button">دانلود SRT ویرایش‌شده</button></div>
+            <div class="caption-editor-actions"><button id="captionAddCue" type="button">افزودن ردیف</button><button id="captionDownloadSrt" type="button">دانلود SRT کلمه‌ای</button><button id="captionDownloadStandardSrt" type="button">دانلود SRT استاندارد</button></div>
             <div id="captionCueList" class="caption-cue-list"></div>
           </details>
         </section>
@@ -264,11 +297,13 @@
             <label>یا تصویر <input id="overlayImage" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" /></label>
             <label>شروع (ثانیه) <input id="overlayStart" type="number" min="0" step="0.05" value="0" /></label>
             <label>پایان (ثانیه) <input id="overlayEnd" type="number" min="0.05" step="0.05" value="3" /></label>
-            <label>جایگاه <select id="overlayPosition"><option value="top">بالا</option><option value="center">وسط</option><option value="bottom">پایین</option></select></label>
+            <label>جایگاه اولیه <select id="overlayPosition"><option value="top">بالا</option><option value="center">وسط</option><option value="bottom">پایین</option></select></label>
             <label>اندازه <select id="overlaySize"><option value="20">کوچک</option><option value="35" selected>متوسط</option><option value="50">بزرگ</option></select></label>
+            <label>گردی گوشهٔ عکس <input id="overlayRadius" type="range" min="0" max="20" step="1" value="0" /><output id="overlayRadiusValue">۰٪ · بدون گردی</output></label>
             <button id="addOverlay" type="button">افزودن لایه</button>
           </div>
-          <p class="overlay-help">در صورت انتخاب تصویر، متن این فرم نادیده گرفته می‌شود. تصویرهای پروژه را پس از بازکردن Recipe دوباره انتخاب کنید.</p>
+          <div class="overlay-inspector"><div class="overlay-inspector-frame" id="overlayInspectorFrame"><img id="overlayInspectorImage" alt="پیش‌نمایش تصویر انتخابی با گردی گوشه" hidden /><span id="overlayInspectorPlaceholder">برای دیدن گوشه‌های عکس، تصویر را انتخاب کنید</span></div><div><strong>پیش‌نمایش گوشهٔ تصویر</strong><p>با کشیدن کنترل گردی، لبه‌ها همین‌جا تغییر می‌کنند. مقدار صفر گوشهٔ کاملاً صاف دارد.</p><button id="overlayPreviewOpen" class="small-action neutral" type="button">دیدن لایه در ویدئو</button></div></div>
+          <p class="overlay-help">پس از افزودن لایه، «دیدن» را بزنید و آن را در پیش‌نمایش ویدئو با ماوس جابه‌جا کنید؛ کنترل‌های افقی و عمودی هم کنار پیش‌نمایش هستند.</p>
           <div id="overlayList" class="overlay-list" aria-live="polite"></div>
         </section>
 
@@ -289,6 +324,32 @@
                 <label for="logoSize"><span>اندازه نسبت به عرض تصویر</span><div class="range-with-value"><input id="logoSize" type="range" min="5" max="35" step="1" value="18" /><output id="logoSizeValue">۱۸٪</output></div></label>
               </div>
               <p class="logo-helper">تغییرات این بخش در پیش‌نمایش ترکیب و فایل خروجی نیز اعمال می‌شوند.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="thumbnailStep" class="workspace-section" aria-labelledby="thumbnailHeading">
+          <div class="section-heading compact"><div><h2 id="thumbnailHeading">استودیوی کاور</h2><p>عکس یا فریم ویدئو را با جابه‌جایی، برش، نوشته و لوگو به کاور تبدیل کنید. پیش‌نمایش همان فایل PNG خروجی است.</p></div></div>
+          <div class="thumbnail-studio">
+            <div class="thumbnail-stage"><div class="thumbnail-stage-toolbar" role="group" aria-label="انتخاب لایه برای جابه‌جایی"><button type="button" data-thumbnail-drag="photo" aria-pressed="true">جابه‌جایی عکس</button><button type="button" data-thumbnail-drag="logo" aria-pressed="false">جابه‌جایی لوگو</button></div><canvas id="thumbnailCanvas" width="1080" height="1920" role="img" aria-label="پیش‌نمایش کاور؛ لایهٔ انتخابی را روی قاب بکشید"></canvas><small id="thumbnailDragHelp">عکس را روی قاب بکشید تا جای آن عوض شود.</small><video id="thumbnailFrameVideo" muted playsinline preload="metadata" hidden></video></div>
+            <div class="thumbnail-controls">
+              <div class="thumbnail-guide"><strong>۱. تصویر</strong><span>عکس آپلود کنید یا فریم بگیرید؛ همان لحظه روی قاب ببینید.</span></div>
+              <div class="thumbnail-options"><label>ابعاد کاور <select id="thumbnailRatio"><option value="short">عمودی ۹:۱۶ · Shorts</option><option value="wide">افقی ۱۶:۹ · YouTube</option><option value="square">مربع ۱:۱</option></select></label><label>رنگ پشت عکس <input id="thumbnailBackgroundColor" type="color" value="#122c3c" /></label></div>
+              <div class="thumbnail-source"><label>عکس پس‌زمینه <input id="thumbnailImage" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" /></label><button id="thumbnailClearImage" class="small-action neutral" type="button">حذف عکس</button></div>
+              <div class="thumbnail-source"><label>یا فریم کلیپ <select id="thumbnailClip"><option value="">ابتدا کلیپ اضافه کنید</option></select></label><label>ثانیهٔ کلیپ <input id="thumbnailTime" type="number" min="0" step="0.1" value="0" dir="ltr" /></label><button id="thumbnailCapture" class="small-action neutral" type="button">گرفتن فریم</button></div>
+              <div class="thumbnail-options"><label>نمایش عکس <select id="thumbnailFit"><option value="cover">پر کردن قاب</option><option value="contain">نمایش کامل عکس</option></select></label><label>بزرگ‌نمایی <input id="thumbnailZoom" type="range" min="100" max="200" step="5" value="100" /><output id="thumbnailZoomValue">۱۰۰٪</output></label><button id="thumbnailResetPhoto" class="small-action neutral" type="button">مرکز کردن عکس</button></div>
+              <div class="thumbnail-guide"><strong>۲. نوشته</strong><span>عنوان کوتاه و خوانا برای کاور انتخاب کنید.</span></div>
+              <div class="thumbnail-presets" role="group" aria-label="ظاهر سریع کاور"><button type="button" data-thumbnail-preset="clear" aria-pressed="false"><b>آزاد</b><small>تصویر روشن، متن ساده</small></button><button type="button" data-thumbnail-preset="focus" aria-pressed="false"><b>تمرکز</b><small>تیتر داخل زمینهٔ تیره</small></button><button type="button" data-thumbnail-preset="bold" aria-pressed="false"><b>جسور</b><small>متن درشت و دورخط</small></button></div>
+              <label>عنوان روی کاور <textarea id="thumbnailTitle" rows="2" maxlength="95" placeholder="مثلاً The startup changing batteries"></textarea></label>
+              <label>زیرعنوان کوتاه (اختیاری) <input id="thumbnailSubtitle" maxlength="65" dir="auto" placeholder="مثلاً 3 lessons in 60 seconds" /></label>
+              <div class="thumbnail-options"><label>اندازهٔ عنوان <input id="thumbnailTitleSize" type="range" min="42" max="120" step="2" value="78" /><output id="thumbnailTitleSizeValue">۷۸</output></label><label>رنگ متن <input id="thumbnailTitleColor" type="color" value="#ffffff" /></label><label>جای عنوان <select id="thumbnailTitlePosition"><option value="bottom">پایین</option><option value="center">وسط</option><option value="top">بالا</option></select></label></div>
+              <div class="thumbnail-options"><label>خوانایی عنوان <select id="thumbnailTextStyle"><option value="outline">دورخط تیره</option><option value="box">زمینهٔ تیره زیر متن</option><option value="plain">بدون پس‌زمینه</option></select></label><label>چینش متن <select id="thumbnailTextAlign"><option value="center">وسط</option><option value="right">راست</option><option value="left">چپ</option></select></label></div>
+              <div class="thumbnail-guide"><strong>۳. لوگو</strong><span>لوگو را از واترمارک بگیرید یا تصویر تازه انتخاب کنید.</span></div>
+              <div class="thumbnail-options"><label>تیرگی زمینه <input id="thumbnailShade" type="range" min="0" max="75" value="35" /><output id="thumbnailShadeValue">۳۵٪</output></label><label>لوگو <select id="thumbnailLogoSource"><option value="none">بدون لوگو</option><option value="watermark">لوگوی واترمارک</option><option value="file">لوگوی جداگانه</option></select></label><label id="thumbnailLogoWrap" hidden>فایل لوگو <input id="thumbnailLogoInput" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" /></label></div>
+              <div class="thumbnail-options"><label>جای لوگو <select id="thumbnailLogoPosition"><option value="top-right">بالا راست</option><option value="top-left">بالا چپ</option><option value="bottom-right">پایین راست</option><option value="bottom-left">پایین چپ</option><option value="custom">جای دلخواه</option></select></label><label>اندازهٔ لوگو <input id="thumbnailLogoSize" type="range" min="8" max="35" value="18" /><output id="thumbnailLogoSizeValue">۱۸٪</output></label></div>
+              <div class="thumbnail-options"><label>گردی گوشهٔ لوگو <input id="thumbnailLogoRadius" type="range" min="0" max="20" step="1" value="0" /><output id="thumbnailLogoRadiusValue">۰٪ · بدون گردی</output></label><label>افقی <input id="thumbnailLogoX" type="range" min="5" max="95" value="90" /><output id="thumbnailLogoXValue">۹۰٪</output></label><label>عمودی <input id="thumbnailLogoY" type="range" min="5" max="95" value="8" /><output id="thumbnailLogoYValue">۸٪</output></label></div>
+              <p class="thumbnail-help" id="thumbnailHint">کاور به‌صورت فایل مستقل PNG دانلود می‌شود و ویدئوی خروجی را تغییر نمی‌دهد. در حساب تأییدشده، آن را از نسخهٔ دسکتاپ YouTube Studio برای Shorts آپلود کنید.</p>
+              <button id="thumbnailDownload" class="primary-button" type="button">دانلود کاور PNG</button>
             </div>
           </div>
         </section>
@@ -320,7 +381,7 @@
 
           <div class="device-readiness" id="deviceReadiness">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-3.6 8-10V5l-8-3-8 3v7c0 6.4 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
-            <div><strong>آماده برای پردازش محلی</strong><p id="deviceHint">خروجی بدون بارگذاری فایل‌ها در اینترنت ساخته می‌شود.</p></div>
+            <div><strong>آماده برای پردازش محلی</strong><p id="deviceHint">خروجی بدون بارگذاری فایل‌ها در اینترنت ساخته می‌شود؛ رونویسی اختیاری با Google انجام می‌شود.</p></div>
           </div>
         </section>
       </main>
@@ -332,7 +393,7 @@
         <span><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 5v14M16 5v14"/></svg><small>تعداد کلیپ</small><strong id="clipCount">۰</strong></span>
         <span class="desktop-summary"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M8 8h8v8H8z"/></svg><small>خروجی</small><strong id="outputSummary">۱۰۸۰ × ۱۹۲۰</strong></span>
       </div>
-      <p class="local-note"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2"/><rect x="5" y="10" width="14" height="11" rx="2"/></svg>همه پردازش‌ها روی دستگاه شما انجام می‌شود</p>
+      <p class="local-note"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2"/><rect x="5" y="10" width="14" height="11" rx="2"/></svg>ساخت ویدئو محلی است؛ رونویسی با انتخاب شما انجام می‌شود</p>
       <div class="render-buttons">
         <button class="preview-button" id="mixPreviewButton" type="button" disabled>
           <svg viewBox="0 0 24 24"><path d="m9 6 9 6-9 6V6Z"/></svg>
@@ -350,6 +411,7 @@
         <div class="dialog-head"><div><h2>تنظیمات برنامه</h2><p>رفتار پیش‌فرض پروژه‌های جدید</p></div><button class="icon-button" value="cancel" aria-label="بستن"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
         <label class="dialog-option"><span><strong>ذخیره خودکار تنظیمات</strong><small>تنظیمات پروژه در همین مرورگر نگهداری شود.</small></span><input id="autosaveSetting" type="checkbox" checked /></label>
         <label class="dialog-option"><span><strong>هشدار پیش از بستن صفحه</strong><small>هنگام وجود فایل‌های واردشده یادآوری شود.</small></span><input id="leaveWarningSetting" type="checkbox" checked /></label>
+        <div class="google-settings"><label for="googleApiKey"><strong>کلید Google API</strong><small>کلید Google AI Studio از نوع قدیمی یا Auth جدید (با پیشوند AQ.) پذیرفته می‌شود. فقط خود کلید را وارد کنید؛ روی همین دستگاه ذخیره می‌شود.</small></label><input id="googleApiKey" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="کلید را اینجا وارد کنید" /><div><button id="googleSaveKey" type="button">ذخیره کلید</button><button id="googleRemoveKey" type="button">حذف کلید</button></div><p id="googleKeyStatus" role="status" aria-live="polite">در حال بررسی اتصال…</p></div>
         <button class="dialog-primary" value="default">ذخیره تنظیمات</button>
       </form>
     </dialog>
@@ -392,6 +454,8 @@
             <div class="preview-caption-row"><label for="previewLogoPosition">جایگاه</label><select id="previewLogoPosition"><option value="top-right">بالا راست</option><option value="top-center">بالا وسط</option><option value="top-left">بالا چپ</option><option value="center-right">وسط راست</option><option value="center">مرکز</option><option value="center-left">وسط چپ</option><option value="bottom-right">پایین راست</option><option value="bottom-center">پایین وسط</option><option value="bottom-left">پایین چپ</option></select></div>
             <div class="preview-caption-row"><label for="previewLogoSize">اندازه</label><input id="previewLogoSize" type="range" min="5" max="35" step="1" value="18" /><output id="previewLogoSizeValue">۱۸٪</output></div>
           </div>
+          <div class="preview-watermark-controls" id="previewOverlayControls" hidden><strong>گردی تصویر روی ویدئو</strong><label>انتخاب تصویر <select id="previewOverlaySelect"></select></label><div class="preview-caption-row"><label for="previewOverlayRadius">گردی گوشه</label><input id="previewOverlayRadius" type="range" min="0" max="20" step="1" value="0" /><output id="previewOverlayRadiusValue">۰٪</output></div><small>صفر = گوشهٔ صاف؛ تغییر هم‌زمان در خروجی ذخیره می‌شود.</small></div>
+          <div class="preview-watermark-controls" id="previewLayerControls" hidden><strong>جای متن یا تصویر روی ویدئو</strong><label>لایه <select id="previewLayerSelect"></select></label><div class="preview-caption-row"><label for="previewLayerX">افقی</label><input id="previewLayerX" type="range" min="5" max="95" value="50" /><output id="previewLayerXValue">۵۰٪</output></div><div class="preview-caption-row"><label for="previewLayerY">عمودی</label><input id="previewLayerY" type="range" min="5" max="95" value="25" /><output id="previewLayerYValue">۲۵٪</output></div><small>خود لایه را روی تصویر بکشید یا از کنترل‌ها استفاده کنید؛ محل آن در خروجی حفظ می‌شود.</small></div>
           <button class="mix-play-button" id="mixPreviewPlay" type="button" aria-label="پخش پیش‌نمایش">
             <svg class="play-icon" viewBox="0 0 24 24"><path d="m9 6 9 6-9 6V6Z"/></svg>
             <svg class="pause-icon" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>
@@ -409,7 +473,7 @@
             <p id="previewCaptionStatus" aria-live="polite">برای دیدن زیرنویس، فایل SRT وارد کنید.</p>
             <div class="preview-caption-row">
               <label for="previewCaptionGroupSize">نمایش کلمات</label>
-              <select id="previewCaptionGroupSize"><option value="3">پانچ ۳ کلمه‌ای</option><option value="4">پانچ ۴ کلمه‌ای</option><option value="1">تک‌کلمه‌ای</option></select>
+              <select id="previewCaptionGroupSize"><option value="3">پانچ ۳ کلمه‌ای</option><option value="4">پانچ ۴ کلمه‌ای</option><option value="1">تک‌کلمه‌ای</option><option value="standard">استاندارد (جمله‌ای)</option></select>
             </div>
             <div class="preview-caption-row">
               <label for="previewCaptionOffsetMs">هماهنگی با صدا (ms)</label>
@@ -428,6 +492,6 @@
 
     <input id="projectImportInput" type="file" accept="application/json,.json" hidden />
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script defer src="./app.js?v=1.9"></script>
+    <script defer src="./app.js?v=2.3.0"></script>
   </body>
 </html>

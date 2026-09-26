@@ -12,6 +12,11 @@ const state = {
   logoStyle: { position: "top-right", sizePercent: 18 },
   overlays: [],
   audioMix: { duck: true, duckPercent: 30, fades: true },
+  thumbnail: { background: null, logo: null, imageName: "", logoName: "", frameClip: "", frameTime: 0,
+    title: "", titleSize: 78, titleColor: "#ffffff", titlePosition: "bottom", shade: 35,
+    logoSource: "none", logoPosition: "top-right", logoSize: 18,
+    ratio: "short", backgroundColor: "#122c3c", fit: "cover", zoom: 100, panX: 0, panY: 0,
+    subtitle: "", textStyle: "outline", textAlign: "center", logoRadius: 0, logoX: 0.90, logoY: 0.08 },
   remembered: { narration: null, music: null, caption: null, logo: null },
   captionStyle: {
     preset: "impact",
@@ -201,6 +206,9 @@ function parseSrt(text) {
 }
 
 function buildCaptionEvents(cues, groupSize, wordByWord) {
+  if (wordByWord && groupSize === "standard") {
+    return buildStandardCaptionEvents(cues);
+  }
   if (!wordByWord || groupSize === 1) {
     return cues.map((cue, index) => ({ ...cue, previousText: "", word: cue.text, groupId: index }));
   }
@@ -227,12 +235,32 @@ function buildCaptionEvents(cues, groupSize, wordByWord) {
   return events.filter((cue) => cue.end > cue.start);
 }
 
+function buildStandardCaptionEvents(cues) {
+  const events = [];
+  let group = [];
+  const finish = () => {
+    if (!group.length) return;
+    const first = group[0], last = group.at(-1);
+    events.push({ start: first.start, end: last.end, text: group.map((item) => item.text).join(" "),
+      previousText: "", word: last.text, groupId: events.length });
+    group = [];
+  };
+  for (const cue of cues) {
+    if (group.length && cue.start - group.at(-1).end > 0.65) finish();
+    group.push(cue);
+    if (group.length >= 9 || cue.end - group[0].start >= 4 || /[.!?؟。！？]$/u.test(cue.text)) finish();
+  }
+  finish();
+  return events;
+}
+
 function refreshCaptionDisplay() {
+  $$('[data-download-caption]').forEach((button) => { button.disabled = !state.caption?.cues?.length; });
   if (!state.caption) return;
   state.caption.wordByWord = state.caption.cues.length > 0 && state.caption.cues.every((cue) => !/\s/u.test(cue.text.trim()));
   state.caption.displayCues = buildCaptionEvents(state.caption.cues, state.captionStyle.groupSize, state.caption.wordByWord);
   const mode = state.caption.wordByWord
-    ? state.captionStyle.groupSize === 1 ? "نمایش تک‌کلمه‌ای" : `پانچ ${toFaDigits(state.captionStyle.groupSize)} کلمه‌ای`
+    ? state.captionStyle.groupSize === "standard" ? "زیرنویس استاندارد" : state.captionStyle.groupSize === 1 ? "نمایش تک‌کلمه‌ای" : `پانچ ${toFaDigits(state.captionStyle.groupSize)} کلمه‌ای`
     : "زیرنویس معمولی";
   $("#captionMeta").textContent = `${toFaDigits(state.caption.cues.length)} ${state.caption.wordByWord ? "کلمه" : "زیرنویس"} · ${mode} · ${formatBytes(state.caption.file.size)}`;
   const firstGroup = state.caption.displayCues.filter((cue) => cue.groupId === state.caption.displayCues[0]?.groupId);
@@ -263,12 +291,13 @@ function formatSrtTime(seconds) {
   return `${String(Math.floor(ms / 3600000)).padStart(2, "0")}:${String(Math.floor(ms / 60000) % 60).padStart(2, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")},${String(ms % 1000).padStart(3, "0")}`;
 }
 
-function downloadEditedSrt() {
+function downloadEditedSrt(standard = false) {
   if (!state.caption?.cues.length) return showToast("ابتدا زیرنویس را وارد کنید.");
   const shift = state.captionStyle.offsetMs / 1000;
-  const adjusted = state.caption.cues.map((cue) => ({ ...cue, start: Math.max(0, cue.start + shift), end: cue.end + shift })).filter((cue) => cue.end > cue.start);
+  const source = standard && state.caption.wordByWord ? buildStandardCaptionEvents(state.caption.cues) : state.caption.cues;
+  const adjusted = source.map((cue) => ({ ...cue, start: Math.max(0, cue.start + shift), end: cue.end + shift })).filter((cue) => cue.end > cue.start);
   const content = adjusted.map((cue, index) => `${index + 1}\n${formatSrtTime(cue.start)} --> ${formatSrtTime(cue.end)}\n${cue.text}`).join("\n\n") + "\n";
-  downloadBlob(new Blob(["\uFEFF", content], { type: "text/plain;charset=utf-8" }), "Flow2Short-edited.srt");
+  downloadBlob(new Blob(["\uFEFF", content], { type: "text/plain;charset=utf-8" }), `Flow2Short-${standard ? "standard" : "word-by-word"}.srt`);
 }
 
 function hexToAssColor(hex, alpha = "00") {
@@ -298,7 +327,7 @@ function buildAssCaptions(width, height) {
   const outline = hexToAssColor(outlineBase, outlineAlpha);
   const background = hexToAssColor(preset.background || "#07111f", preset.borderStyle === 3 ? "28" : "80");
   const outlineWidth = preset.borderStyle === 3 ? Math.max(7, preset.outline) : preset.outline;
-  const isWordByWord = state.caption.wordByWord;
+  const isWordByWord = state.caption.wordByWord && state.captionStyle.groupSize !== "standard";
   const events = state.caption.displayCues.map((cue) => {
     const start = Math.max(0, cue.start + state.captionStyle.offsetMs / 1000);
     const end = cue.end + state.captionStyle.offsetMs / 1000;
@@ -354,7 +383,7 @@ function applyCaptionStyle() {
   if (!CAPTION_PRESETS[state.captionStyle.preset]) state.captionStyle.preset = "clean";
   state.captionStyle.fontSize = Math.max(36, Math.min(84, Number(state.captionStyle.fontSize) || 58));
   if (!["top", "center", "bottom"].includes(state.captionStyle.position)) state.captionStyle.position = "bottom";
-  state.captionStyle.groupSize = [1, 3, 4].includes(Number(state.captionStyle.groupSize)) ? Number(state.captionStyle.groupSize) : 3;
+  state.captionStyle.groupSize = state.captionStyle.groupSize === "standard" ? "standard" : [1, 3, 4].includes(Number(state.captionStyle.groupSize)) ? Number(state.captionStyle.groupSize) : 3;
   if (!/^#[0-9a-f]{6}$/i.test(state.captionStyle.color || "")) state.captionStyle.color = CAPTION_PRESETS[state.captionStyle.preset].color;
   const preset = CAPTION_PRESETS[state.captionStyle.preset] || CAPTION_PRESETS.clean;
   const elements = [refs.captionStylePreview, refs.mixPreviewCaption];
@@ -445,7 +474,9 @@ async function setLogo(file) {
     const width = bitmap.width;
     const height = bitmap.height;
     if (state.logo?.url) URL.revokeObjectURL(state.logo.url);
-    state.logo = { file, width, height, url: URL.createObjectURL(file) };
+    state.logo?.bitmap?.close();
+    state.logo = { file, width, height, bitmap, url: URL.createObjectURL(file) };
+    bitmap = null;
     state.remembered.logo = { name: file.name, size: file.size };
     refs.mixPreviewLogo.src = state.logo.url;
     refs.logoStageMark.src = state.logo.url;
@@ -453,6 +484,7 @@ async function setLogo(file) {
     $("#logoMeta").textContent = `${toFaDigits(width)} × ${toFaDigits(height)} · ${formatBytes(file.size)}`;
     $("#removeLogo").hidden = false;
     applyLogoStyle();
+    drawThumbnail();
     saveDraft();
   } catch (error) {
     refs.logoInput.value = "";
@@ -467,6 +499,7 @@ async function setLogo(file) {
 
 function removeLogo(persist = true) {
   if (state.logo?.url) URL.revokeObjectURL(state.logo.url);
+  state.logo?.bitmap?.close();
   state.logo = null;
   state.remembered.logo = null;
   refs.logoInput.value = "";
@@ -477,6 +510,7 @@ function removeLogo(persist = true) {
   $("#logoMeta").textContent = "PNG، JPG یا WebP";
   $("#removeLogo").hidden = true;
   applyLogoStyle();
+  drawThumbnail();
   if (persist) saveDraft();
 }
 
@@ -495,6 +529,247 @@ async function logoPngBytes(frameWidth, frameHeight) {
   }
 }
 
+function thumbnailControls() {
+  const item = state.thumbnail;
+  const get = (name) => $(`#thumbnail${name}`);
+  item.title = get("Title").value.trim();
+  item.titleSize = Number(get("TitleSize").value);
+  item.titleColor = get("TitleColor").value;
+  item.titlePosition = get("TitlePosition").value;
+  item.shade = Number(get("Shade").value);
+  item.logoSource = get("LogoSource").value;
+  item.logoPosition = get("LogoPosition").value;
+  item.logoSize = Number(get("LogoSize").value);
+  item.logoRadius = Number(get("LogoRadius").value);
+  item.logoX = Number(get("LogoX").value) / 100;
+  item.logoY = Number(get("LogoY").value) / 100;
+  item.ratio = get("Ratio").value;
+  item.backgroundColor = get("BackgroundColor").value;
+  item.fit = get("Fit").value;
+  item.zoom = Number(get("Zoom").value);
+  item.subtitle = get("Subtitle").value.trim();
+  item.textStyle = get("TextStyle").value;
+  item.textAlign = get("TextAlign").value;
+  const canvas = $("#thumbnailCanvas");
+  const [width, height] = { short: [1080, 1920], wide: [1920, 1080], square: [1080, 1080] }[item.ratio] || [1080, 1920];
+  if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+  [["TitleSize", item.titleSize], ["Shade", `${toFaDigits(item.shade)}٪`], ["LogoSize", `${toFaDigits(item.logoSize)}٪`], ["Zoom", `${toFaDigits(item.zoom)}٪`],
+    ["LogoRadius", item.logoRadius ? `${toFaDigits(item.logoRadius)}٪` : "۰٪ · بدون گردی"],
+    ["LogoX", `${toFaDigits(Math.round(item.logoX * 100))}٪`], ["LogoY", `${toFaDigits(Math.round(item.logoY * 100))}٪`]]
+    .forEach(([name, value]) => { get(`${name}Value`).textContent = toFaDigits(value); });
+  ["TitleSize", "Shade", "LogoSize", "Zoom", "LogoRadius", "LogoX", "LogoY"].forEach((name) => setRangeVisual(get(name)));
+  get("LogoWrap").hidden = item.logoSource !== "file";
+  drawThumbnail();
+}
+
+function restoreThumbnail(recipe = {}) {
+  const item = state.thumbnail;
+  item.background?.close();
+  item.logo?.close();
+  Object.assign(item, { background: null, logo: null, imageName: recipe.imageName || "", logoName: recipe.logoName || "",
+    frameClip: recipe.frameClip || "", frameTime: Number(recipe.frameTime) || 0,
+    title: String(recipe.title || "").slice(0, 95), titleSize: Math.max(42, Math.min(120, Number(recipe.titleSize) || 78)),
+    titleColor: /^#[0-9a-f]{6}$/i.test(recipe.titleColor || "") ? recipe.titleColor : "#ffffff",
+    titlePosition: ["top", "center", "bottom"].includes(recipe.titlePosition) ? recipe.titlePosition : "bottom",
+    shade: Number.isFinite(Number(recipe.shade)) ? Math.max(0, Math.min(75, Number(recipe.shade))) : 35,
+    logoSource: ["none", "watermark", "file"].includes(recipe.logoSource) ? recipe.logoSource : "none",
+    logoPosition: ["top-right", "top-left", "bottom-right", "bottom-left", "custom"].includes(recipe.logoPosition) ? recipe.logoPosition : "top-right",
+    logoSize: Math.max(8, Math.min(35, Number(recipe.logoSize) || 18)),
+    logoRadius: Math.max(0, Math.min(20, Number(recipe.logoRadius) || 0)),
+    logoX: Math.max(.05, Math.min(.95, Number(recipe.logoX ?? (recipe.logoPosition?.endsWith("left") ? .10 : .90)))),
+    logoY: Math.max(.05, Math.min(.95, Number(recipe.logoY ?? (recipe.logoPosition?.startsWith("bottom") ? .92 : .08)))),
+    ratio: ["short", "wide", "square"].includes(recipe.ratio) ? recipe.ratio : "short",
+    backgroundColor: /^#[0-9a-f]{6}$/i.test(recipe.backgroundColor || "") ? recipe.backgroundColor : "#122c3c",
+    fit: recipe.fit === "contain" ? "contain" : "cover",
+    zoom: Math.max(100, Math.min(200, Number(recipe.zoom) || 100)),
+    panX: Math.max(-1, Math.min(1, Number(recipe.panX) || 0)), panY: Math.max(-1, Math.min(1, Number(recipe.panY) || 0)),
+    subtitle: String(recipe.subtitle || "").slice(0, 65),
+    textStyle: ["outline", "box", "plain"].includes(recipe.textStyle) ? recipe.textStyle : "outline",
+    textAlign: ["center", "right", "left"].includes(recipe.textAlign) ? recipe.textAlign : "center",
+  });
+  for (const [name, value] of [["Title", item.title], ["TitleSize", item.titleSize], ["TitleColor", item.titleColor],
+    ["TitlePosition", item.titlePosition], ["Shade", item.shade], ["LogoSource", item.logoSource],
+    ["LogoPosition", item.logoPosition], ["LogoSize", item.logoSize], ["LogoRadius", item.logoRadius],
+    ["LogoX", Math.round(item.logoX * 100)], ["LogoY", Math.round(item.logoY * 100)], ["Time", item.frameTime],
+    ["Ratio", item.ratio], ["BackgroundColor", item.backgroundColor], ["Fit", item.fit], ["Zoom", item.zoom],
+    ["Subtitle", item.subtitle], ["TextStyle", item.textStyle], ["TextAlign", item.textAlign]]) {
+    $(`#thumbnail${name}`).value = value;
+  }
+  $("#thumbnailImage").value = "";
+  $("#thumbnailLogoInput").value = "";
+  thumbnailControls();
+  if (item.imageName || item.frameClip || (item.logoName && item.logoSource === "file")) {
+    $("#thumbnailHint").textContent = "پس از بازکردن پروژه، عکس و لوگوی جداگانه را دوباره انتخاب کنید یا فریم کلیپ را دوباره بگیرید.";
+  }
+}
+
+function updateThumbnailClipOptions() {
+  const select = $("#thumbnailClip");
+  const selected = select.value;
+  select.innerHTML = state.clips.length
+    ? state.clips.map((clip, index) => `<option value="${clip.id}">${toFaDigits(index + 1)} · ${escapeHtml(clip.name)}</option>`).join("")
+    : '<option value="">ابتدا کلیپ اضافه کنید</option>';
+  select.value = state.clips.some((clip) => clip.id === selected) ? selected : state.clips[0]?.id || "";
+}
+
+async function chooseThumbnailBitmap(file, kind) {
+  if (!file) return;
+  if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 20 * 1024 * 1024) return showToast("PNG، JPG یا WebP حداکثر ۲۰ مگابایت انتخاب کنید.");
+  try {
+    const bitmap = await createImageBitmap(file);
+    if (bitmap.width * bitmap.height > 24_000_000) {
+      bitmap.close();
+      return showToast("ابعاد عکس بیش از حد بزرگ است؛ حداکثر ۲۴ مگاپیکسل.");
+    }
+    state.thumbnail[kind]?.close();
+    state.thumbnail[kind] = bitmap;
+    if (kind === "background") {
+      state.thumbnail.panX = 0; state.thumbnail.panY = 0;
+      state.thumbnail.imageName = file.name;
+      $("#thumbnailHint").textContent = `عکس کاور: ${file.name}`;
+    } else state.thumbnail.logoName = file.name;
+    drawThumbnail();
+    saveDraft();
+  } catch { showToast("این تصویر قابل خواندن نیست."); }
+}
+
+async function captureThumbnailFrame() {
+  const clip = state.clips.find((item) => item.id === $("#thumbnailClip").value);
+  if (!clip) return showToast("ابتدا یک کلیپ وارد کنید.");
+  const button = $("#thumbnailCapture");
+  const video = $("#thumbnailFrameVideo");
+  button.disabled = true;
+  try {
+    const offset = Math.max(0, Math.min(Number($("#thumbnailTime").value) || 0, clipDuration(clip) - 0.05));
+    video.src = clip.url;
+    video.load();
+    await waitForMetadata(video);
+    const target = Math.max(0.03, Math.min(clip.end - 0.02, clip.start + offset + 0.03));
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("خواندن فریم زمان زیادی برد.")), 12000);
+      const finish = () => { clearTimeout(timer); resolve(); };
+      video.addEventListener("seeked", finish, { once: true });
+      video.currentTime = target;
+      if (Math.abs(video.currentTime - target) < 0.01 && video.readyState >= 2) finish();
+    });
+    const bitmap = await createImageBitmap(video);
+    state.thumbnail.background?.close();
+    state.thumbnail.background = bitmap;
+    state.thumbnail.panX = 0; state.thumbnail.panY = 0;
+    state.thumbnail.imageName = "";
+    state.thumbnail.frameClip = clip.name;
+    state.thumbnail.frameTime = offset;
+    $("#thumbnailImage").value = "";
+    $("#thumbnailHint").textContent = `فریم ${clip.name} در ثانیهٔ ${formatDecimal(offset)} انتخاب شد.`;
+    drawThumbnail();
+    saveDraft();
+  } catch (error) { showToast(error.message || "گرفتن فریم ممکن نشد."); }
+  finally { video.removeAttribute("src"); video.load(); button.disabled = false; }
+}
+
+function thumbnailCover(ctx, image, width, height, item) {
+  const scale = (item.fit === "contain" ? Math.min(width / image.width, height / image.height) : Math.max(width / image.width, height / image.height)) * item.zoom / 100;
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
+  const x = (width - drawWidth) / 2 + item.panX * Math.abs(width - drawWidth) / 2;
+  const y = (height - drawHeight) / 2 + item.panY * Math.abs(height - drawHeight) / 2;
+  ctx.drawImage(image, x, y, drawWidth, drawHeight);
+}
+
+function thumbnailLines(ctx, text, maxWidth) {
+  const lines = [];
+  for (const paragraph of text.split("\n")) {
+    let line = "";
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && ctx.measureText(next).width > maxWidth) { lines.push(line); line = word; }
+      else line = next;
+    }
+    if (line) lines.push(line);
+  }
+  return lines.slice(0, 5);
+}
+
+function drawThumbnail() {
+  const canvas = $("#thumbnailCanvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const { width, height } = canvas;
+  const item = state.thumbnail;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = item.backgroundColor;
+  ctx.fillRect(0, 0, width, height);
+  if (item.background) thumbnailCover(ctx, item.background, width, height, item);
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  const alpha = item.shade / 100;
+  gradient.addColorStop(0, `rgba(5,18,28,${(alpha * 0.35).toFixed(2)})`);
+  gradient.addColorStop(0.55, `rgba(5,18,28,${(alpha * 0.4).toFixed(2)})`);
+  gradient.addColorStop(1, `rgba(5,18,28,${alpha.toFixed(2)})`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  if (item.title) {
+    ctx.font = `700 ${item.titleSize}px Vazirmatn, sans-serif`;
+    ctx.direction = /[\u0600-\u06ff]/.test(item.title) ? "rtl" : "ltr";
+    ctx.textAlign = item.textAlign;
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = Math.max(5, item.titleSize * 0.11);
+    ctx.strokeStyle = "rgba(5,18,28,.85)";
+    ctx.fillStyle = item.titleColor;
+    const lines = thumbnailLines(ctx, item.title, width * 0.82);
+    const lineHeight = item.titleSize * 1.3;
+    const center = item.titlePosition === "top" ? height * 0.23 : item.titlePosition === "center" ? height * 0.5 : height * 0.73;
+    const textX = item.textAlign === "right" ? width * 0.91 : item.textAlign === "left" ? width * 0.09 : width / 2;
+    if (item.textStyle === "box") {
+      ctx.fillStyle = "rgba(5,18,28,.82)";
+      const pad = item.titleSize * .6;
+      const boxHeight = lines.length * lineHeight + pad * 2 + (item.subtitle ? item.titleSize * .6 : 0);
+      ctx.fillRect(width * .04, center - boxHeight / 2, width * .92, boxHeight);
+      ctx.fillStyle = item.titleColor;
+    }
+    lines.forEach((line, index) => {
+      const y = center + (index - (lines.length - 1) / 2) * lineHeight;
+      if (item.textStyle === "outline") ctx.strokeText(line, textX, y, width * 0.82);
+      ctx.fillText(line, textX, y, width * 0.82);
+    });
+    if (item.subtitle) {
+      ctx.font = `600 ${Math.max(28, Math.round(item.titleSize * .43))}px Vazirmatn, sans-serif`;
+      ctx.fillStyle = item.titleColor;
+      const subtitleY = center + lines.length * lineHeight / 2 + item.titleSize * .47;
+      if (item.textStyle === "outline") ctx.strokeText(item.subtitle, textX, subtitleY, width * .82);
+      ctx.fillText(item.subtitle, textX, subtitleY, width * .82);
+    }
+  }
+  const logo = item.logoSource === "watermark" ? state.logo?.bitmap : item.logoSource === "file" ? item.logo : null;
+  if (logo) {
+    const maxWidth = width * item.logoSize / 100;
+    const scale = Math.min(maxWidth / logo.width, height * 0.18 / logo.height);
+    const w = logo.width * scale;
+    const h = logo.height * scale;
+    const x = width * item.logoX - w / 2;
+    const y = height * item.logoY - h / 2;
+    if (item.logoRadius) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, Math.min(w, h) * item.logoRadius / 100);
+      ctx.clip();
+    }
+    ctx.drawImage(logo, x, y, w, h);
+    if (item.logoRadius) ctx.restore();
+  }
+}
+
+async function downloadThumbnail() {
+  await Promise.all([document.fonts.load(`700 ${state.thumbnail.titleSize}px Vazirmatn`),
+    document.fonts.load(`600 ${Math.max(28, Math.round(state.thumbnail.titleSize * .43))}px Vazirmatn`)]);
+  drawThumbnail();
+  const canvas = $("#thumbnailCanvas");
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) return showToast("ساخت تصویر کاور ممکن نشد.");
+  downloadBlob(blob, `${safeFileName(refs.outputName.value)}-thumbnail.png`);
+}
+
 function restoreOverlays(items) {
   for (const overlay of state.overlays) if (overlay.url) URL.revokeObjectURL(overlay.url);
   state.overlays = (Array.isArray(items) ? items : []).filter((item) =>
@@ -504,7 +779,11 @@ function restoreOverlays(items) {
     name: item.name || "", sizeBytes: item.sizeBytes || 0, file: null, url: null,
     start: Number(item.start), end: Number(item.end),
     position: ["top", "center", "bottom"].includes(item.position) ? item.position : "top",
+    x: Number.isFinite(Number(item.x)) ? Math.max(0.05, Math.min(0.95, Number(item.x))) : 0.5,
+    y: Number.isFinite(Number(item.y)) ? Math.max(0.05, Math.min(0.95, Number(item.y)))
+      : item.position === "bottom" ? 0.68 : item.position === "center" ? 0.5 : 0.22,
     size: [20, 35, 50].includes(Number(item.size)) ? Number(item.size) : 35,
+    radius: Math.max(0, Math.min(20, Number(item.radius) || 0)),
   }));
   renderOverlays();
 }
@@ -518,23 +797,85 @@ function renderOverlays() {
     <label>پایان <input type="number" data-overlay-field="end" min="0.05" step="0.05" value="${item.end.toFixed(2)}" dir="ltr" /></label>
     <label>جایگاه <select data-overlay-field="position">${["top", "center", "bottom"].map((position) => `<option value="${position}" ${item.position === position ? "selected" : ""}>${{top:"بالا",center:"وسط",bottom:"پایین"}[position]}</option>`).join("")}</select></label>
     <label>اندازه <select data-overlay-field="size">${[20, 35, 50].map((size) => `<option value="${size}" ${item.size === size ? "selected" : ""}>${toFaDigits(size)}٪</option>`).join("")}</select></label>
-    <button type="button" data-overlay-action="preview">دیدن</button>
+    ${item.kind === "image" ? `<label>گردی گوشه <input type="range" data-overlay-field="radius" min="0" max="20" step="1" value="${item.radius || 0}" /><output>${toFaDigits(item.radius || 0)}٪</output></label>` : ""}
+    <button type="button" data-overlay-action="preview">دیدن و جابه‌جایی</button>
     ${item.kind === "image" && !item.file ? '<label class="small-action neutral">انتخاب تصویر<input type="file" data-overlay-relink accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden /></label>' : ""}
     <button type="button" data-overlay-action="delete">حذف</button>
   </div>`).join("") || "<p class=\"overlay-help\">هنوز لایه‌ای اضافه نشده است.</p>";
   updatePreviewOverlays(state.preview.globalTime);
+  syncPreviewOverlayControls();
+  syncPreviewLayerControls();
+}
+
+function syncPreviewLayerControls() {
+  const select = $("#previewLayerSelect");
+  const panel = $("#previewLayerControls");
+  panel.hidden = !state.overlays.length;
+  if (!state.overlays.length) return;
+  const previous = select.value;
+  select.innerHTML = state.overlays.map((item, index) => `<option value="${item.id}">${toFaDigits(index + 1)} · ${escapeHtml(item.kind === "text" ? item.text.slice(0, 25) : item.name)}</option>`).join("");
+  const active = state.overlays.find((item) => state.preview.globalTime >= item.start && state.preview.globalTime < item.end);
+  select.value = state.overlays.some((item) => item.id === previous) ? previous : active?.id || state.overlays[0].id;
+  updatePreviewLayerSliders();
+}
+
+function updatePreviewLayerSliders() {
+  const item = state.overlays.find((overlay) => overlay.id === $("#previewLayerSelect").value);
+  if (!item) return;
+  for (const [axis, value] of [["X", item.x], ["Y", item.y]]) {
+    const input = $(`#previewLayer${axis}`);
+    input.value = Math.round(value * 100);
+    $(`#previewLayer${axis}Value`).textContent = `${toFaDigits(input.value)}٪`;
+    setRangeVisual(input);
+  }
+}
+
+function syncPreviewOverlayControls() {
+  const images = state.overlays.filter((item) => item.kind === "image" && item.file);
+  const panel = $("#previewOverlayControls");
+  const select = $("#previewOverlaySelect");
+  panel.hidden = !images.length;
+  if (!images.length) return;
+  const previous = select.value;
+  select.innerHTML = images.map((item, index) => `<option value="${item.id}">${toFaDigits(index + 1)} · ${escapeHtml(item.name || "تصویر")}</option>`).join("");
+  const active = images.find((item) => state.preview.globalTime >= item.start && state.preview.globalTime < item.end);
+  select.value = images.some((item) => item.id === previous) ? previous : active?.id || images[0].id;
+  const value = images.find((item) => item.id === select.value)?.radius || 0;
+  $("#previewOverlayRadius").value = value;
+  $("#previewOverlayRadiusValue").textContent = `${toFaDigits(value)}٪`;
+  setRangeVisual($("#previewOverlayRadius"));
 }
 
 function updatePreviewOverlays(time) {
   const container = $("#mixPreviewOverlays");
   if (!container) return;
   const visible = state.overlays.filter((item) => time >= item.start && time < item.end && (item.kind === "text" || item.url));
-  const key = visible.map((item) => item.id).join(":");
+  const key = visible.map((item) => `${item.id}:${item.radius}:${item.size}:${item.x}:${item.y}`).join(":");
   if (state.preview.overlaysKey === key) return;
   state.preview.overlaysKey = key;
-  container.innerHTML = visible.map((item) => `<div class="preview-overlay" data-position="${item.position}">
-    ${item.kind === "image" ? `<img src="${item.url}" style="max-width:${item.size}%" alt="" />` : `<span dir="auto" style="font-size:clamp(12px,${item.size * 0.9}px,42px)">${escapeHtml(item.text)}</span>`}
+  container.innerHTML = visible.map((item) => `<div class="preview-overlay" data-free-position data-overlay-id="${item.id}" style="--overlay-x:${(item.x * 100).toFixed(2)}%;--overlay-y:${(item.y * 100).toFixed(2)}%;--overlay-width:${item.size}%">
+    ${item.kind === "image" ? `<img src="${item.url}" alt="" draggable="false" />` : `<span dir="auto" style="font-size:clamp(12px,${item.size * 0.9}px,42px)">${escapeHtml(item.text)}</span>`}
   </div>`).join("");
+  for (const image of $$(".preview-overlay img", container)) {
+    const item = visible.find((entry) => entry.url === image.src);
+    if (!item) continue;
+    const apply = () => { image.style.borderRadius = `${Math.min(image.clientWidth, image.clientHeight) * item.radius / 100}px`; };
+    if (image.complete) apply(); else image.addEventListener("load", apply, { once: true });
+  }
+}
+
+let overlayInspectorUrl = null;
+function updateOverlayInspector() {
+  const image = $("#overlayInspectorImage");
+  const file = $("#overlayImage").files[0];
+  const radius = Number($("#overlayRadius").value);
+  if (!file) { image.hidden = true; $("#overlayInspectorPlaceholder").hidden = false; return; }
+  if (!overlayInspectorUrl) overlayInspectorUrl = URL.createObjectURL(file);
+  image.src = overlayInspectorUrl;
+  image.hidden = false;
+  $("#overlayInspectorPlaceholder").hidden = true;
+  const apply = () => { image.style.borderRadius = `${Math.min(image.clientWidth, image.clientHeight) * radius / 100}px`; };
+  if (image.complete) requestAnimationFrame(apply); else image.addEventListener("load", apply, { once: true });
 }
 
 async function overlayPngBytes(item, frameWidth, frameHeight) {
@@ -546,7 +887,14 @@ async function overlayPngBytes(item, frameWidth, frameHeight) {
       const scale = Math.min(frameWidth * item.size / 100 / bitmap.width, frameHeight * 0.35 / bitmap.height);
       canvas.width = Math.max(2, Math.round(bitmap.width * scale));
       canvas.height = Math.max(2, Math.round(bitmap.height * scale));
-      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const draw = canvas.getContext("2d");
+      if (item.radius) {
+        const radius = Math.min(canvas.width, canvas.height) * item.radius / 100;
+        draw.beginPath();
+        draw.roundRect(0, 0, canvas.width, canvas.height, radius);
+        draw.clip();
+      }
+      draw.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     } finally { bitmap.close(); }
   } else {
     const fontSize = Math.round(frameWidth * item.size / 350);
@@ -736,6 +1084,7 @@ function renderClipCards() {
   $$('input[type="range"]', refs.clipList).forEach(setRangeVisual);
   renderTimeline();
   updateLogoStage();
+  updateThumbnailClipOptions();
 }
 
 function renderTimeline() {
@@ -832,7 +1181,7 @@ function updateDeviceReadiness() {
   } else {
     box.classList.remove("is-mobile-warning");
     title.textContent = "آماده برای پردازش محلی";
-    hint.textContent = `حدود ${formatBytes(totalBytes)} ورودی؛ خروجی بدون ارسال فایل‌ها به اینترنت ساخته می‌شود.`;
+    hint.textContent = `حدود ${formatBytes(totalBytes)} ورودی؛ ساخت خروجی محلی است. فقط رونویسی اختیاری، صدا را به Google می‌فرستد.`;
   }
 }
 
@@ -884,7 +1233,7 @@ function updatePreviewCaption(time) {
   const cue = index >= 0 ? state.caption.displayCues[index] : null;
   if (cue && refs.mixPreviewCaption.dataset.cue !== String(index)) {
     refs.mixPreviewCaption.dataset.cue = String(index);
-    if (state.caption.wordByWord) {
+    if (state.caption.wordByWord && state.captionStyle.groupSize !== "standard") {
       const word = document.createElement("span");
       word.className = "caption-active-word";
       word.textContent = cue.word;
@@ -1181,8 +1530,11 @@ async function openMixPreview(startTime = 0) {
   refs.mixPreviewVideo.style.objectFit = refs.fitMode.value === "contain" ? "contain" : "cover";
   state.preview.index = -1;
   state.preview.globalTime = Math.max(0, Math.min(startTime, state.preview.total));
+  syncPreviewOverlayControls();
+  syncPreviewLayerControls();
   applyCaptionStyle();
   refs.mixPreviewDialog.showModal();
+  state.preview.overlaysKey = "";
   const startSegment = previewSegmentAt(state.preview.globalTime);
   await loadMixPreviewAt(state.preview.globalTime, false);
   if (startSegment?.index > 0) await prepareTransitionFreeze(state.preview.segments[startSegment.index - 1].clip).catch(() => {});
@@ -1272,6 +1624,11 @@ async function setAudio(kind, file) {
     const duration = await getMediaDuration(file);
     if (state[kind]?.url) URL.revokeObjectURL(state[kind].url);
     state[kind] = { file, duration, url: URL.createObjectURL(file) };
+    if (kind === "narration" && generatedNarration && generatedNarration !== file) {
+      generatedNarration = null;
+      $("#ttsDownload").disabled = true;
+      $("#ttsPlayer").hidden = true;
+    }
     state.remembered[kind] = { name: file.name, size: file.size, volume: Number($(`#${kind}Volume`).value) };
     $(`#${kind}Name`).textContent = file.name;
     $(`#${kind}Meta`).textContent = `${formatTime(duration)} · ${formatBytes(file.size)}`;
@@ -1311,6 +1668,203 @@ async function setCaption(file) {
   }
 }
 
+function transcriptionMime(file) {
+  const extension = file.name.split(".").pop().toLowerCase();
+  return { mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", aac: "audio/aac", ogg: "audio/ogg", webm: "audio/webm", flac: "audio/flac" }[extension] || file.type;
+}
+
+async function generateCaptionsFromAudio(overrideFile = null, expectedNarration = false) {
+  const button = $("#transcribeButton");
+  const status = $("#transcribeStatus");
+  const source = $("#transcribeSource").value;
+  const file = overrideFile || (source === "narration" ? state.narration?.file : $("#transcribeFile").files[0]);
+  if (!file) return showToast(source === "narration" ? "ابتدا فایل نریشن پروژه را اضافه کنید." : "یک فایل صوتی انتخاب کنید.");
+  if (file.size > 35 * 1024 * 1024) return showToast("حجم صدا باید کمتر از ۳۵ مگابایت باشد.");
+  if (state.preview.total && source === "file") status.textContent = "در حال رونویسی؛ زمان فایل صوتی باید از صفر با ویدئو هماهنگ باشد…";
+  else status.textContent = "در حال ارسال نریشن و دریافت زمان‌بندی کلمات…";
+  button.disabled = true;
+  try {
+    const response = await fetch(new URL("./__transcribe", APP_BASE_URL), {
+      method: "POST", headers: { "Content-Type": transcriptionMime(file) }, body: file,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "رونویسی انجام نشد.");
+    const cues = (Array.isArray(data.cues) ? data.cues : []).filter((cue) =>
+      Number.isFinite(cue.start) && Number.isFinite(cue.end) && cue.end > cue.start && String(cue.text || "").trim()
+    );
+    if (!cues.length) throw new Error("هیچ کلمه‌ای با زمان معتبر دریافت نشد؛ زیرنویس قبلی حفظ شد.");
+    if (expectedNarration && state.narration?.file !== file) {
+      status.textContent = "نریشن عوض شد؛ زیرنویسِ صدای قبلی کنار گذاشته شد.";
+      return false;
+    }
+    const content = cues.map((cue, index) => `${index + 1}\n${formatSrtTime(cue.start)} --> ${formatSrtTime(cue.end)}\n${cue.text}`).join("\n\n") + "\n";
+    const generated = new File([content], `Flow2Short-auto-${Date.now()}.srt`, { type: "text/plain" });
+    const previous = state.caption;
+    await setCaption(generated);
+    if (state.caption === previous) throw new Error("ثبت زیرنویس خودکار انجام نشد.");
+    setCaptionOffset(0);
+    status.textContent = `${toFaDigits(cues.length)} کلمه با زمان اختصاصی آماده شد. SRT کلمه‌ای یا استاندارد را از دکمه‌های همین بخش دانلود کنید.`;
+    return true;
+  } catch (error) {
+    status.textContent = error instanceof SyntaxError ? "سرویس رونویسی در لانچر فعلی فعال نیست. برنامه را با لانچر Python همین نسخه باز کنید." : error.message;
+    showToast(status.textContent);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function googleApiRequest(path, options) {
+  const response = await fetch(new URL(`./${path}`, APP_BASE_URL), { cache: "no-store", ...options });
+  const contentType = response.headers.get("Content-Type") || "";
+  if (!response.ok) {
+    let message = "سرویس Google در لانچر فعلی فعال نیست؛ برنامه را با لانچر Python یا نسخهٔ مستقل اجرا کنید.";
+    if (contentType.includes("application/json")) message = (await response.json()).error || message;
+    throw new Error(message);
+  }
+  return response;
+}
+
+async function refreshGoogleConnection() {
+  try {
+    const response = await googleApiRequest("__google_config");
+    const configured = (await response.json()).configured;
+    $("#googleKeyStatus").textContent = configured ? "کلید روی همین دستگاه ثبت شده است." : "هنوز کلیدی ثبت نشده است.";
+    $("#ttsStatus").textContent = configured ? "اتصال گوگل آماده است. متن و گوینده را انتخاب کنید، سپس دکمهٔ تبدیل را بزنید." : "برای شروع، کلید API گوگل را در تنظیمات برنامه ثبت کنید.";
+    if (configured) await loadGoogleVoices();
+    else {
+      $("#ttsVoice").replaceChildren(new Option("ابتدا کلید Google را تنظیم کنید", ""));
+      availableVoices = [];
+      renderVoiceGallery();
+    }
+  } catch (error) {
+    $("#googleKeyStatus").textContent = error.message;
+  }
+}
+
+let availableVoices = [];
+let showAllVoices = false;
+let voiceLoadSerial = 0;
+const voiceSamples = new Map();
+let voicePreviewSerial = 0;
+
+function renderVoiceGallery() {
+  const search = $("#voiceSearch").value.trim().toLocaleLowerCase();
+  const filtered = availableVoices.filter((voice) => `${voice.name} ${voice.description}`.toLocaleLowerCase().includes(search));
+  const visible = search || showAllVoices ? filtered : filtered.slice(0, 6);
+  $("#voiceGallery").innerHTML = visible.map((voice) => `<div class="voice-card ${$("#ttsVoice").value === voice.id ? "is-selected" : ""}">
+    <button type="button" class="voice-card-choice" data-voice-choice="${voice.id}" role="radio" aria-checked="${$("#ttsVoice").value === voice.id}"><strong>${escapeHtml(voice.name)}</strong><small>${escapeHtml(voice.description || "صدای انگلیسی")}</small></button>
+    <button type="button" class="voice-card-listen" data-voice-listen="${voice.id}" aria-label="شنیدن نمونهٔ صدای ${escapeHtml(voice.name).replace(/"/g, "&quot;")}">▶ نمونه</button>
+  </div>`).join("") || `<p>${availableVoices.length ? "صدایی با این جست‌وجو پیدا نشد." : "پس از اتصال Google، صداها اینجا نمایش داده می‌شوند."}</p>`;
+  $("#voiceShowAll").hidden = Boolean(search || showAllVoices || filtered.length <= 6);
+  if (!$("#voiceShowAll").hidden) $("#voiceShowAll").textContent = `نمایش همهٔ ${toFaDigits(filtered.length)} صدا`;
+}
+
+async function loadGoogleVoices() {
+  const select = $("#ttsVoice");
+  const former = select.value;
+  const serial = ++voiceLoadSerial;
+  select.replaceChildren(new Option("در حال بارگذاری صداها…", ""));
+  $("#voiceGallery").innerHTML = "<p>در حال بارگذاری صداها…</p>";
+  try {
+    const gender = $("#ttsGender").value;
+    const response = await googleApiRequest(`__voices?gender=${encodeURIComponent(gender)}`);
+    const { voices } = await response.json();
+    if (serial !== voiceLoadSerial) return;
+    availableVoices = (voices || []).filter((voice) => /^[A-Za-z0-9_-]{2,120}$/.test(voice.id || "") && voice.name);
+    showAllVoices = false;
+    select.replaceChildren(new Option("انتخاب گوینده", ""), ...availableVoices.map((voice) => new Option(voice.name, voice.id)));
+    if (former && [...select.options].some((item) => item.value === former)) select.value = former;
+    renderVoiceGallery();
+    if (select.options.length === 1) $("#ttsStatus").textContent = "صدایی برای این انتخاب پیدا نشد. نوع صدا را تغییر دهید یا اتصال API را بررسی کنید.";
+  } catch (error) {
+    if (serial !== voiceLoadSerial) return;
+    select.replaceChildren(new Option("بارگذاری فهرست صدا ناموفق بود", ""));
+    $("#ttsStatus").textContent = error.message;
+    $("#voiceGallery").innerHTML = "<p>بارگذاری صداها ممکن نشد؛ اتصال Google را بررسی کنید.</p>";
+  }
+}
+
+async function listenToVoice(voiceId) {
+  const voice = availableVoices.find((item) => item.id === voiceId);
+  if (!voice) return;
+  const status = $("#voiceSampleStatus");
+  const player = $("#voiceSamplePlayer");
+  const model = $("#ttsModel").value;
+  const cacheKey = `${model}:${voiceId}`;
+  const serial = ++voicePreviewSerial;
+  let evictedUrl = null;
+  try {
+    status.textContent = `در حال آماده‌سازی نمونهٔ ${voice.name}…`;
+    let url = voiceSamples.get(cacheKey);
+    if (!url) {
+      const response = await googleApiRequest("__tts", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ script: "This is how your next story could sound.", voice: voiceId,
+          style: "warm and conversational, natural pace", model }) });
+      const blob = await response.blob();
+      if (blob.size < 44 || blob.type !== "audio/wav") throw new Error("نمونهٔ صدا دریافت نشد.");
+      url = URL.createObjectURL(blob);
+      if (voiceSamples.size >= 12) {
+        const [oldKey, oldUrl] = voiceSamples.entries().next().value;
+        voiceSamples.delete(oldKey);
+        evictedUrl = oldUrl;
+      }
+      voiceSamples.set(cacheKey, url);
+    }
+    if (serial !== voicePreviewSerial) { if (evictedUrl) URL.revokeObjectURL(evictedUrl); return; }
+    player.src = url;
+    if (evictedUrl) URL.revokeObjectURL(evictedUrl);
+    player.hidden = false;
+    try { await player.play(); }
+    catch (error) {
+      if (error.name === "NotAllowedError") {
+        status.textContent = `نمونهٔ ${voice.name} آماده است؛ دکمهٔ پخشِ زیر کارت‌ها را بزنید.`;
+        return;
+      }
+      throw error;
+    }
+    status.textContent = `نمونهٔ ${voice.name} در حال پخش است. این درخواست ممکن است از سهمیهٔ Google شما استفاده کند.`;
+  } catch (error) { if (serial === voicePreviewSerial) { status.textContent = error.message; showToast(error.message); } }
+}
+
+let generatedNarration = null;
+async function generateNarration() {
+  const button = $("#ttsGenerate"), status = $("#ttsStatus");
+  const script = $("#ttsScript").value.trim();
+  if (!script || script.length > 5000) return showToast("متن نریشن باید بین ۱ تا ۵۰۰۰ نویسه باشد.");
+  const voice = $("#ttsVoice").value;
+  if (!voice) return showToast("یک گوینده انتخاب کنید. کلید Google را در تنظیمات ثبت کنید.");
+  const style = [$("#ttsTone").value, $("#ttsPace").value, $("#ttsStyle").value.trim()].filter(Boolean).join(", ");
+  const createCaptions = $("#ttsWithCaptions").checked;
+  button.disabled = true;
+  status.textContent = "در حال ساخت صدای نریشن با Google…";
+  try {
+    const response = await googleApiRequest("__tts", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ script, voice, style, model: $("#ttsModel").value }) });
+    const blob = await response.blob();
+    if (blob.size < 44 || blob.type !== "audio/wav") throw new Error("فایل WAV معتبری دریافت نشد.");
+    const file = new File([blob], `Flow2Short-narration-${Date.now()}.wav`, { type: "audio/wav" });
+    await setAudio("narration", file);
+    if (state.narration?.file !== file) throw new Error("افزودن نریشن به پروژه ممکن نشد.");
+    generatedNarration = file;
+    const player = $("#ttsPlayer");
+    player.src = state.narration.url;
+    player.hidden = false;
+    $("#ttsDownload").disabled = false;
+    status.textContent = "صدا آماده است؛ همین حالا می‌توانید پخش یا دانلود کنید.";
+    button.disabled = false;
+    if (createCaptions) {
+      status.textContent = "صدا آماده است. زمان‌بندی دقیق کلمات از روی همین صدای واقعی در حال انجام است…";
+      generateCaptionsFromAudio(file, true).then((result) => {
+        if (state.narration?.file !== file) return;
+        status.textContent = result ? "صدا و هر دو نوع SRT آماده‌اند؛ زمان‌ها را در پیش‌نمایش بررسی کنید." : "صدا آماده است؛ ساخت زیرنویس کامل نشد. از بخش کناری دوباره تلاش کنید.";
+      });
+    }
+  } catch (error) {
+    status.textContent = error.message;
+    showToast(error.message);
+  } finally { button.disabled = false; }
+}
+
 function removeMedia(kind) {
   if (state[kind]?.url) URL.revokeObjectURL(state[kind].url);
   state[kind] = null;
@@ -1323,6 +1877,11 @@ function removeMedia(kind) {
     refs.captionStylePreview.textContent = "YOUR NEXT BIG IDEA";
     updatePreviewCaption(state.preview.globalTime);
     renderCaptionEditor();
+    $$('[data-download-caption]').forEach((button) => { button.disabled = true; });
+  } else if (kind === "narration") {
+    generatedNarration = null;
+    $("#ttsDownload").disabled = true;
+    $("#ttsPlayer").hidden = true;
   }
   updateSummary();
   saveDraft();
@@ -1349,7 +1908,9 @@ function getRecipe() {
       music: state.music ? { name: state.music.file.name, size: state.music.file.size, volume: Number($("#musicVolume").value) } : state.remembered.music,
       caption: state.caption ? { name: state.caption.file.name, size: state.caption.file.size, burn: $("#burnCaptions").checked, cues: state.caption.cues } : state.remembered.caption,
       captionStyle: { ...state.captionStyle },
-      overlays: state.overlays.map(({ kind, text, name, sizeBytes, start, end, position, size }) => ({ kind, text, name, sizeBytes, start, end, position, size })),
+      overlays: state.overlays.map(({ kind, text, name, sizeBytes, start, end, position, size, radius, x, y }) => ({ kind, text, name, sizeBytes, start, end, position, size, radius, x, y })),
+      thumbnail: Object.fromEntries(["imageName", "logoName", "frameClip", "frameTime", "title", "titleSize", "titleColor", "titlePosition", "shade", "logoSource", "logoPosition", "logoSize", "ratio", "backgroundColor", "fit", "zoom", "panX", "panY", "subtitle", "textStyle", "textAlign", "logoRadius", "logoX", "logoY"]
+        .map((key) => [key, state.thumbnail[key]])),
       audioMix: { ...state.audioMix },
       logo: state.logo ? { name: state.logo.file.name, size: state.logo.file.size } : state.remembered.logo,
       logoStyle: { ...state.logoStyle },
@@ -1404,6 +1965,7 @@ async function importProject(file) {
     state.audioMix = { duck: true, duckPercent: 30, fades: true, ...(recipe.project.audioMix || {}) };
     syncAudioMixControls();
     restoreOverlays(recipe.project.overlays);
+    restoreThumbnail(recipe.project.thumbnail);
     removeLogo(false);
     state.remembered.logo = recipe.project.logo || null;
     state.logoStyle = { ...state.logoStyle, ...(recipe.project.logoStyle || {}) };
@@ -1453,6 +2015,7 @@ function loadPreferences() {
       state.captionStyle = { ...state.captionStyle, ...(draft.project.captionStyle || {}) };
       state.audioMix = { ...state.audioMix, ...(draft.project.audioMix || {}) };
       restoreOverlays(draft.project.overlays);
+      restoreThumbnail(draft.project.thumbnail);
       state.logoStyle = { ...state.logoStyle, ...(draft.project.logoStyle || {}) };
       if (draft.project.logo?.name) {
         rememberedLogoName = draft.project.logo.name;
@@ -1465,6 +2028,7 @@ function loadPreferences() {
   applyCaptionStyle();
   syncAudioMixControls();
   applyLogoStyle();
+  thumbnailControls();
   if (rememberedLogoName) $("#previewLogoName").textContent = `لوگو را دوباره انتخاب کنید: ${rememberedLogoName}`;
   setCaptionOffset(state.captionStyle.offsetMs, false);
 }
@@ -1792,12 +2356,10 @@ async function renderVideo() {
       }
       for (const [index, overlay] of overlayInputs.entries()) {
         const { item, inputIndex: imageIndex, width: imageWidth, height: imageHeight } = overlay;
-        const x = Math.round((width - imageWidth) / 2);
-        const y = item.position === "top" ? Math.round(height * 0.17)
-          : item.position === "bottom" ? Math.round(height * 0.75 - imageHeight)
-            : Math.round((height - imageHeight) / 2);
+        const x = Math.round(width * item.x - imageWidth / 2);
+        const y = Math.round(height * item.y - imageHeight / 2);
         const destination = `[visual${index}]`;
-        parts.push(`${source}[${imageIndex}:v]overlay=${x}:${Math.max(0, y)}:enable='between(t,${item.start.toFixed(3)},${item.end.toFixed(3)})':shortest=1:format=auto${destination}`);
+        parts.push(`${source}[${imageIndex}:v]overlay=${x}:${y}:enable='between(t,${item.start.toFixed(3)},${item.end.toFixed(3)})':shortest=1:format=auto${destination}`);
         source = destination;
       }
       if (parts.length) args.push("-filter_complex", parts.join(";"));
@@ -1952,6 +2514,41 @@ function wireEvents() {
   refs.narrationInput.addEventListener("change", (event) => setAudio("narration", event.target.files[0]));
   refs.musicInput.addEventListener("change", (event) => setAudio("music", event.target.files[0]));
   refs.captionInput.addEventListener("change", (event) => setCaption(event.target.files[0]));
+  $("#transcribeFile").addEventListener("change", (event) => {
+    const file = event.target.files[0];
+    $("#transcribeFileName").textContent = file ? `فایل انتخابی: ${file.name}` : "اگر نریشن ندارید، اینجا فایل صدا انتخاب کنید.";
+    if (file) $("#transcribeSource").value = "file";
+  });
+  $("#transcribeButton").addEventListener("click", () => generateCaptionsFromAudio());
+  $("#ttsGender").addEventListener("change", loadGoogleVoices);
+  $("#voiceSearch").addEventListener("input", renderVoiceGallery);
+  $("#voiceShowAll").addEventListener("click", () => { showAllVoices = true; renderVoiceGallery(); });
+  $("#voiceGallery").addEventListener("click", (event) => {
+    const choice = event.target.closest("[data-voice-choice]");
+    const listen = event.target.closest("[data-voice-listen]");
+    if (choice) {
+      $("#ttsVoice").value = choice.dataset.voiceChoice;
+      renderVoiceGallery();
+    }
+    if (listen) listenToVoice(listen.dataset.voiceListen);
+  });
+  $("#ttsGenerate").addEventListener("click", generateNarration);
+  $("#ttsDownload").addEventListener("click", () => {
+    if (generatedNarration) downloadBlob(generatedNarration, generatedNarration.name);
+  });
+  $("#googleSaveKey").addEventListener("click", async () => {
+    const field = $("#googleApiKey");
+    try {
+      await googleApiRequest("__google_config", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: field.value.trim() }) });
+      field.value = "";
+      await refreshGoogleConnection();
+    } catch (error) { $("#googleKeyStatus").textContent = error.message; }
+  });
+  $("#googleRemoveKey").addEventListener("click", async () => {
+    try { await googleApiRequest("__google_config", { method: "DELETE" }); await refreshGoogleConnection(); }
+    catch (error) { $("#googleKeyStatus").textContent = error.message; }
+  });
   $("#captionAddCue").addEventListener("click", () => {
     if (!state.caption) return showToast("ابتدا فایل SRT وارد کنید.");
     const start = Math.max(0, state.preview.globalTime || state.caption.cues.at(-1)?.end || 0);
@@ -1960,7 +2557,9 @@ function wireEvents() {
     refreshCaptionDisplay();
     saveDraft();
   });
-  $("#captionDownloadSrt").addEventListener("click", downloadEditedSrt);
+  $("#captionDownloadSrt").addEventListener("click", () => downloadEditedSrt(false));
+  $("#captionDownloadStandardSrt").addEventListener("click", () => downloadEditedSrt(true));
+  $$('[data-download-caption]').forEach((button) => button.addEventListener("click", () => downloadEditedSrt(button.dataset.downloadCaption === "standard")));
   $("#addOverlay").addEventListener("click", () => {
     const file = $("#overlayImage").files[0] || null;
     const text = $("#overlayText").value.trim();
@@ -1971,9 +2570,15 @@ function wireEvents() {
     if (file && !/^(image\/png|image\/jpeg|image\/webp)$/i.test(file.type)) return showToast("برای تصویر از PNG، JPG یا WebP استفاده کنید.");
     state.overlays.push({ id: uid(), kind: file ? "image" : "text", text, file,
       name: file?.name || "", sizeBytes: file?.size || 0, url: file ? URL.createObjectURL(file) : null,
-      start, end, position: $("#overlayPosition").value, size: Number($("#overlaySize").value) });
+      start, end, position: $("#overlayPosition").value,
+      x: 0.5, y: $("#overlayPosition").value === "bottom" ? 0.68 : $("#overlayPosition").value === "center" ? 0.5 : 0.22,
+      size: Number($("#overlaySize").value),
+      radius: file ? Number($("#overlayRadius").value) : 0 });
     $("#overlayText").value = "";
     $("#overlayImage").value = "";
+    if (overlayInspectorUrl) URL.revokeObjectURL(overlayInspectorUrl);
+    overlayInspectorUrl = null;
+    updateOverlayInspector();
     renderOverlays();
     saveDraft();
   });
@@ -1988,7 +2593,18 @@ function wireEvents() {
       state.overlays = state.overlays.filter((overlay) => overlay !== item);
       renderOverlays();
       saveDraft();
-    } else openMixPreview(item.start).catch((error) => showToast(error.message));
+    } else {
+      if (!state.clips.length) return showToast("برای دیدن محل لایه روی ویدئو، ابتدا یک کلیپ اضافه کنید.");
+      openMixPreview(item.start).then(() => {
+      $("#previewLayerSelect").value = item.id;
+      updatePreviewLayerSliders();
+      if (item.kind === "image") {
+        $("#previewOverlaySelect").value = item.id;
+        $("#previewOverlayRadius").value = item.radius;
+        $("#previewOverlayRadiusValue").textContent = `${toFaDigits(item.radius)}٪`;
+      }
+      }).catch((error) => showToast(error.message));
+    }
   });
   $("#overlayList").addEventListener("change", (event) => {
     if (!event.target.matches("[data-overlay-relink]")) return;
@@ -2009,7 +2625,7 @@ function wireEvents() {
     if (!field) return;
     const item = state.overlays.find((overlay) => overlay.id === event.target.closest("[data-overlay-id]")?.dataset.overlayId);
     if (!item) return;
-    const value = ["start", "end", "size"].includes(field) ? Number(event.target.value) : event.target.value.trim();
+    const value = ["start", "end", "size", "radius"].includes(field) ? Number(event.target.value) : event.target.value.trim();
     const updated = { ...item, [field]: value };
     if (!Number.isFinite(updated.start) || !Number.isFinite(updated.end) || updated.start < 0 || updated.end <= updated.start || (updated.kind === "text" && !updated.text)) {
       event.target.value = item[field];
@@ -2019,6 +2635,186 @@ function wireEvents() {
     renderOverlays();
     saveDraft();
   });
+  $("#overlayRadius").addEventListener("input", (event) => {
+    $("#overlayRadiusValue").textContent = Number(event.target.value) ? `${toFaDigits(event.target.value)}٪` : "۰٪ · بدون گردی";
+    setRangeVisual(event.target);
+    updateOverlayInspector();
+  });
+  $("#overlayImage").addEventListener("change", () => {
+    if (overlayInspectorUrl) URL.revokeObjectURL(overlayInspectorUrl);
+    overlayInspectorUrl = null;
+    updateOverlayInspector();
+  });
+  $("#overlayPreviewOpen").addEventListener("click", () => {
+    const first = state.overlays.find((item) => item.kind === "image" && item.file);
+    if (!first) return showToast("برای دیدن در ویدئو، تصویر را با دکمهٔ افزودن لایه ثبت کنید.");
+    openMixPreview(first.start).catch((error) => showToast(error.message));
+  });
+  $("#previewOverlaySelect").addEventListener("change", (event) => {
+    const item = state.overlays.find((overlay) => overlay.id === event.target.value);
+    if (!item) return;
+    $("#previewOverlayRadius").value = item.radius;
+    $("#previewOverlayRadiusValue").textContent = `${toFaDigits(item.radius)}٪`;
+    setRangeVisual($("#previewOverlayRadius"));
+    loadMixPreviewAt(item.start, false).catch((error) => showToast(error.message));
+  });
+  $("#previewOverlayRadius").addEventListener("input", (event) => {
+    const item = state.overlays.find((overlay) => overlay.id === $("#previewOverlaySelect").value);
+    if (!item) return;
+    item.radius = Number(event.target.value);
+    $("#previewOverlayRadiusValue").textContent = `${toFaDigits(item.radius)}٪`;
+    setRangeVisual(event.target);
+    const row = $(`[data-overlay-id="${item.id}"] [data-overlay-field="radius"]`);
+    if (row) { row.value = item.radius; row.nextElementSibling.textContent = `${toFaDigits(item.radius)}٪`; }
+    state.preview.overlaysKey = "";
+    updatePreviewOverlays(state.preview.globalTime);
+  });
+  $("#previewOverlayRadius").addEventListener("change", saveDraft);
+  $("#previewLayerSelect").addEventListener("change", (event) => {
+    const item = state.overlays.find((overlay) => overlay.id === event.target.value);
+    if (!item) return;
+    updatePreviewLayerSliders();
+    loadMixPreviewAt(item.start, false).catch((error) => showToast(error.message));
+  });
+  for (const axis of ["X", "Y"]) {
+    const input = $(`#previewLayer${axis}`);
+    input.addEventListener("input", () => {
+      const item = state.overlays.find((overlay) => overlay.id === $("#previewLayerSelect").value);
+      if (!item) return;
+      item[axis.toLowerCase()] = Number(input.value) / 100;
+      $(`#previewLayer${axis}Value`).textContent = `${toFaDigits(input.value)}٪`;
+      setRangeVisual(input);
+      updatePreviewOverlays(state.preview.globalTime);
+    });
+    input.addEventListener("change", saveDraft);
+  }
+  let layerDrag = null;
+  $("#mixPreviewOverlays").addEventListener("pointerdown", (event) => {
+    const target = event.target.closest("[data-free-position] img, [data-free-position] span");
+    const element = target?.closest("[data-overlay-id]");
+    const item = state.overlays.find((overlay) => overlay.id === element?.dataset.overlayId);
+    if (!item) return;
+    pauseMixPreview();
+    layerDrag = { target, element, item };
+    target.setPointerCapture(event.pointerId);
+    $("#previewLayerSelect").value = item.id;
+    updatePreviewLayerSliders();
+    event.preventDefault();
+  });
+  $("#mixPreviewOverlays").addEventListener("pointermove", (event) => {
+    if (!layerDrag) return;
+    const rect = refs.mixPreviewStage.getBoundingClientRect();
+    layerDrag.item.x = Math.max(.05, Math.min(.95, (event.clientX - rect.left) / rect.width));
+    layerDrag.item.y = Math.max(.05, Math.min(.95, (event.clientY - rect.top) / rect.height));
+    layerDrag.element.style.setProperty("--overlay-x", `${layerDrag.item.x * 100}%`);
+    layerDrag.element.style.setProperty("--overlay-y", `${layerDrag.item.y * 100}%`);
+    const visible = state.overlays.filter((item) => state.preview.globalTime >= item.start && state.preview.globalTime < item.end && (item.kind === "text" || item.url));
+    state.preview.overlaysKey = visible.map((item) => `${item.id}:${item.radius}:${item.size}:${item.x}:${item.y}`).join(":");
+    updatePreviewLayerSliders();
+  });
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
+    $("#mixPreviewOverlays").addEventListener(type, () => { if (layerDrag) saveDraft(); layerDrag = null; });
+  }
+  $("#overlayList").addEventListener("input", (event) => {
+    if (event.target.dataset.overlayField !== "radius") return;
+    const item = state.overlays.find((overlay) => overlay.id === event.target.closest("[data-overlay-id]")?.dataset.overlayId);
+    if (!item) return;
+    item.radius = Number(event.target.value);
+    event.target.nextElementSibling.textContent = `${toFaDigits(item.radius)}٪`;
+    state.preview.overlaysKey = "";
+    updatePreviewOverlays(state.preview.globalTime);
+    saveDraft();
+  });
+  $("#thumbnailImage").addEventListener("change", (event) => chooseThumbnailBitmap(event.target.files[0], "background"));
+  $("#thumbnailClearImage").addEventListener("click", () => {
+    state.thumbnail.background?.close();
+    state.thumbnail.background = null;
+    state.thumbnail.imageName = "";
+    state.thumbnail.frameClip = "";
+    $("#thumbnailImage").value = "";
+    $("#thumbnailHint").textContent = "عکس پس‌زمینه حذف شد؛ می‌توانید یک فریم یا عکس تازه انتخاب کنید.";
+    drawThumbnail();
+    saveDraft();
+  });
+  $("#thumbnailCapture").addEventListener("click", captureThumbnailFrame);
+  $("#thumbnailLogoInput").addEventListener("change", (event) => chooseThumbnailBitmap(event.target.files[0], "logo"));
+  $("#thumbnailResetPhoto").addEventListener("click", () => {
+    state.thumbnail.panX = 0; state.thumbnail.panY = 0;
+    $("#thumbnailZoom").value = "100";
+    thumbnailControls(); saveDraft();
+  });
+  const thumbnailCanvas = $("#thumbnailCanvas");
+  const thumbnailPresets = {
+    clear: { Shade: "16", TitleSize: "70", TitleColor: "#ffffff", TextStyle: "outline" },
+    focus: { Shade: "36", TitleSize: "76", TitleColor: "#ffffff", TextStyle: "box" },
+    bold: { Shade: "55", TitleSize: "100", TitleColor: "#ffdc42", TextStyle: "outline" },
+  };
+  $$('[data-thumbnail-preset]').forEach((button) => button.addEventListener("click", () => {
+    const preset = thumbnailPresets[button.dataset.thumbnailPreset];
+    for (const [name, value] of Object.entries(preset)) $(`#thumbnail${name}`).value = value;
+    $$('[data-thumbnail-preset]').forEach((option) => option.setAttribute("aria-pressed", String(option === button)));
+    thumbnailControls(); saveDraft();
+  }));
+  let thumbnailDragMode = "photo";
+  $$('[data-thumbnail-drag]').forEach((button) => button.addEventListener("click", () => {
+    thumbnailDragMode = button.dataset.thumbnailDrag;
+    $$('[data-thumbnail-drag]').forEach((option) => option.setAttribute("aria-pressed", String(option === button)));
+    $("#thumbnailDragHelp").textContent = thumbnailDragMode === "logo"
+      ? "لوگو را روی قاب بکشید؛ گردی و اندازه را از کنترل‌های سمت راست تنظیم کنید."
+      : "عکس را روی قاب بکشید تا جای آن عوض شود.";
+  }));
+  let photoDrag = null;
+  thumbnailCanvas.addEventListener("pointerdown", (event) => {
+    const logo = state.thumbnail.logoSource === "watermark" ? state.logo?.bitmap : state.thumbnail.logoSource === "file" ? state.thumbnail.logo : null;
+    if (thumbnailDragMode === "logo" && !logo) return showToast("ابتدا یک لوگو برای کاور انتخاب کنید.");
+    if (thumbnailDragMode === "photo" && !state.thumbnail.background) return showToast("ابتدا عکس یا فریم کاور را انتخاب کنید.");
+    photoDrag = { mode: thumbnailDragMode, x: event.clientX, y: event.clientY,
+      panX: state.thumbnail.panX, panY: state.thumbnail.panY,
+      logoX: state.thumbnail.logoX, logoY: state.thumbnail.logoY };
+    thumbnailCanvas.setPointerCapture(event.pointerId);
+  });
+  thumbnailCanvas.addEventListener("pointermove", (event) => {
+    if (!photoDrag) return;
+    const bounds = thumbnailCanvas.getBoundingClientRect();
+    if (photoDrag.mode === "logo") {
+      state.thumbnail.logoX = Math.max(.05, Math.min(.95, photoDrag.logoX + (event.clientX - photoDrag.x) / bounds.width));
+      state.thumbnail.logoY = Math.max(.05, Math.min(.95, photoDrag.logoY + (event.clientY - photoDrag.y) / bounds.height));
+      for (const axis of ["X", "Y"]) {
+        const input = $(`#thumbnailLogo${axis}`);
+        input.value = Math.round(state.thumbnail[`logo${axis}`] * 100);
+        $(`#thumbnailLogo${axis}Value`).textContent = `${toFaDigits(input.value)}٪`;
+        setRangeVisual(input);
+      }
+      $("#thumbnailLogoPosition").value = "custom";
+      state.thumbnail.logoPosition = "custom";
+      drawThumbnail();
+      return;
+    }
+    if (!state.thumbnail.background) return;
+    const { width, height } = thumbnailCanvas;
+    const image = state.thumbnail.background;
+    const scale = (state.thumbnail.fit === "contain" ? Math.min(width / image.width, height / image.height) : Math.max(width / image.width, height / image.height)) * state.thumbnail.zoom / 100;
+    const slackX = Math.abs(width - image.width * scale) / 2;
+    const slackY = Math.abs(height - image.height * scale) / 2;
+    state.thumbnail.panX = slackX ? Math.max(-1, Math.min(1, photoDrag.panX + (event.clientX - photoDrag.x) * width / bounds.width / slackX)) : 0;
+    state.thumbnail.panY = slackY ? Math.max(-1, Math.min(1, photoDrag.panY + (event.clientY - photoDrag.y) * height / bounds.height / slackY)) : 0;
+    drawThumbnail();
+  });
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) thumbnailCanvas.addEventListener(type, () => { if (photoDrag) saveDraft(); photoDrag = null; });
+  for (const name of ["Title", "TitleSize", "TitleColor", "TitlePosition", "Shade", "LogoSource", "LogoPosition", "LogoSize", "LogoRadius", "LogoX", "LogoY", "Ratio", "BackgroundColor", "Fit", "Zoom", "Subtitle", "TextStyle", "TextAlign"]) {
+    const input = $("#thumbnail" + name);
+    input.addEventListener(["Title", "Subtitle", "TitleSize", "Shade", "LogoSize", "LogoRadius", "LogoX", "LogoY", "Zoom", "TitleColor", "BackgroundColor"].includes(name) ? "input" : "change", () => {
+      if (["TitleSize", "Shade", "TitleColor", "TextStyle"].includes(name)) $$('[data-thumbnail-preset]').forEach((option) => option.setAttribute("aria-pressed", "false"));
+      if (name === "LogoPosition" && input.value !== "custom") {
+        $("#thumbnailLogoX").value = input.value.endsWith("right") ? "90" : "10";
+        $("#thumbnailLogoY").value = input.value.startsWith("top") ? "8" : "92";
+      }
+      if (name === "LogoX" || name === "LogoY") $("#thumbnailLogoPosition").value = "custom";
+      thumbnailControls();
+      saveDraft();
+    });
+  }
+  $("#thumbnailDownload").addEventListener("click", () => downloadThumbnail().catch((error) => showToast(error.message)));
   $("#showSafeGuide").addEventListener("change", (event) => {
     $("#shortsSafeGuide").hidden = !event.target.checked;
   });
@@ -2112,7 +2908,7 @@ function wireEvents() {
     saveDraft();
   });
   [refs.captionGroupSize, refs.previewCaptionGroupSize].forEach((select) => select.addEventListener("change", () => {
-    state.captionStyle.groupSize = Number(select.value);
+    state.captionStyle.groupSize = select.value === "standard" ? "standard" : Number(select.value);
     refreshCaptionDisplay();
     saveDraft();
   }));
@@ -2253,25 +3049,26 @@ function init() {
   updateSummary();
   $("#launchWarning").hidden = location.protocol !== "file:";
   registerServiceWorker();
+  refreshGoogleConnection();
 }
 
 async function startApp() {
-  if (document.documentElement.dataset.appVersion === "1.9") return init();
+  if (document.documentElement.dataset.appVersion === "2.3.0") return init();
   // A previously installed service worker may combine an old HTML page with
   // new JS. Refetch the page without its cached URL before wiring any events.
   if (location.protocol.startsWith("http")) {
     try {
       const freshUrl = new URL(`./index.html?flow2short-refresh=${Date.now()}`, APP_BASE_URL);
       const response = await fetch(freshUrl, { cache: "no-store" });
-      if (response.ok && (await response.text()).includes('data-app-version="1.9"')) {
+      if (response.ok && (await response.text()).includes('data-app-version="2.3.0"')) {
         const reloadUrl = new URL(location.href);
-        reloadUrl.searchParams.set("flow2short-ui", `1.9-${Date.now()}`);
+        reloadUrl.searchParams.set("flow2short-ui", `2.3.0-${Date.now()}`);
         location.replace(reloadUrl.href);
         return;
       }
     } catch (error) { console.warn("Could not refresh the app shell", error); }
   }
-  document.body.innerHTML = '<main style="max-width:36rem;margin:12vh auto;padding:2rem;font:18px/2 sans-serif;direction:rtl"><h1>نسخهٔ صفحه و برنامه هماهنگ نیست</h1><p>پنجرهٔ اجرای نسخهٔ قبلی را ببندید و Flow2Short نسخهٔ ۱.۹ را دوباره اجرا کنید. سپس این صفحه را تازه‌سازی کنید.</p><button type="button" onclick="location.reload()" style="padding:.7rem 1.5rem;cursor:pointer">تازه‌سازی صفحه</button></main>';
+  document.body.innerHTML = '<main style="max-width:36rem;margin:12vh auto;padding:2rem;font:18px/2 sans-serif;direction:rtl"><h1>نسخهٔ صفحه و برنامه هماهنگ نیست</h1><p>پنجرهٔ اجرای نسخهٔ قبلی را ببندید و Flow2Short نسخهٔ ۲.۳ را دوباره اجرا کنید. سپس این صفحه را تازه‌سازی کنید.</p><button type="button" onclick="location.reload()" style="padding:.7rem 1.5rem;cursor:pointer">تازه‌سازی صفحه</button></main>';
 }
 
 startApp();

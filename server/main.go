@@ -68,6 +68,14 @@ func main() {
 	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.Header().Set("X-Content-Type-Options", "nosniff")
 		response.Header().Set("Referrer-Policy", "no-referrer")
+		if request.URL.Path == "/__transcribe" {
+			transcribeHTTP(response, request, port)
+			return
+		}
+		if request.URL.Path == "/__google_config" || request.URL.Path == "/__tts" || request.URL.Path == "/__voices" {
+			googleStudioHTTP(response, request, port)
+			return
+		}
 		if request.URL.Path == "/__health" {
 			response.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			_, _ = response.Write([]byte("ok"))
