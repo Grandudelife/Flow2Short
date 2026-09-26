@@ -35,6 +35,8 @@ const state = {
     audioContext: null,
     audioConnected: false,
     gains: null,
+    freezeCache: new Map(),
+    freezePending: new Map(),
   },
   settings: {
     autosave: true,
@@ -77,6 +79,7 @@ const refs = {
   mixPreviewButton: $("#mixPreviewButton"),
   mixPreviewDialog: $("#mixPreviewDialog"),
   mixPreviewVideo: $("#mixPreviewVideo"),
+  mixTransitionFreeze: $("#mixTransitionFreeze"),
   mixPreviewNarration: $("#mixPreviewNarration"),
   mixPreviewMusic: $("#mixPreviewMusic"),
   mixPreviewCaption: $("#mixPreviewCaption"),
@@ -108,6 +111,23 @@ const refs = {
 };
 
 const toFaDigits = (value) => String(value).replace(/\d/g, (digit) => "۰۱۲۳۴۵۶۷۸۹"[digit]);
+
+const TRANSITIONS = {
+  none: { label: "بدون ترنزیشن", ffmpeg: null },
+  fade: { label: "محو نرم", ffmpeg: "fade" },
+  zoom: { label: "زوم", ffmpeg: "zoomin" },
+  slide: { label: "حرکت به چپ", ffmpeg: "slideleft" },
+  wipe: { label: "پاک‌شدن به راست", ffmpeg: "wiperight" },
+  black: { label: "محو به سیاه", ffmpeg: "fadeblack" },
+};
+const TRANSITION_DURATIONS = [0.3, 0.4, 0.6];
+
+function selectedTransition(clip, nextClip) {
+  if (!nextClip || !clip || !TRANSITIONS[clip.transition]?.ffmpeg) return null;
+  const duration = TRANSITION_DURATIONS.includes(Number(clip.transitionSeconds)) ? Number(clip.transitionSeconds) : 0.4;
+  if (clipDuration(nextClip) < duration + 0.08) throw new Error(`کلیپ «${nextClip.name}» برای ترنزیشن ${toFaDigits(duration)} ثانیه‌ای کوتاه است.`);
+  return { type: clip.transition, duration };
+}
 
 const CAPTION_PRESETS = {
   impact: { name: "بولد پاپ", color: "#ffdc42", outline: 5, shadow: 1, bold: true, borderStyle: 1 },
@@ -525,6 +545,8 @@ async function addClips(files) {
         start: remembered ? Math.max(0, Math.min(duration, Number(remembered.start) || 0)) : 0,
         end: remembered ? Math.max(0.05, Math.min(duration, Number(remembered.end) || duration)) : duration,
         volume: remembered ? Math.max(0, Math.min(100, Number(remembered.sourceAudioPercent) || 0)) : 35,
+        transition: TRANSITIONS[remembered?.transition] ? remembered.transition : "none",
+        transitionSeconds: TRANSITION_DURATIONS.includes(Number(remembered?.transitionSeconds)) ? Number(remembered.transitionSeconds) : 0.4,
         thumbnail,
       });
     } catch (error) {
@@ -573,6 +595,15 @@ function renderClipCards() {
         <button type="button" data-action="down" aria-label="انتقال یک ردیف به پایین" ${index === state.clips.length - 1 ? "disabled" : ""}><svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
         <button class="delete-clip" type="button" data-action="delete" aria-label="حذف کلیپ"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14"/><path d="M10 11v6M14 11v6"/></svg></button>
       </div>
+      ${index < state.clips.length - 1 ? `<div class="clip-transition">
+        <label>ترنزیشن به کلیپ بعدی <select data-field="transition" aria-label="ترنزیشن بعد از ${escapeHtml(clip.name)}">
+          ${Object.entries(TRANSITIONS).map(([key, value]) => `<option value="${key}" ${clip.transition === key ? "selected" : ""}>${value.label}</option>`).join("")}
+        </select></label>
+        <label>مدت <select data-field="transitionSeconds" aria-label="مدت ترنزیشن بعد از ${escapeHtml(clip.name)}" ${clip.transition === "none" ? "disabled" : ""}>
+          ${TRANSITION_DURATIONS.map((duration) => `<option value="${duration}" ${clip.transitionSeconds === duration ? "selected" : ""}>${toFaDigits(duration.toFixed(1))} ثانیه</option>`).join("")}
+        </select></label>
+        <button type="button" data-action="preview-transition" ${clip.transition === "none" ? "disabled" : ""}>دیدن گذار</button>
+      </div>` : ""}
     </article>
   `).join("");
 
@@ -709,6 +740,95 @@ function formatPreciseTime(seconds) {
   return toFaDigits(`${String(Math.floor(ms / 60000)).padStart(2, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}.${String(ms % 1000).padStart(3, "0")}`);
 }
 
+function transitionFreezeKey(clip) {
+  return `${clip.id}:${clip.end}:${refs.fitMode.value}`;
+}
+
+function prepareTransitionFreeze(clip) {
+  const key = transitionFreezeKey(clip);
+  if (state.preview.freezeCache.has(key)) return Promise.resolve(state.preview.freezeCache.get(key));
+  if (state.preview.freezePending.has(key)) return state.preview.freezePending.get(key);
+  const pending = (async () => {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.preload = "auto";
+    video.src = clip.url;
+    try {
+      await waitForMetadata(video);
+      const target = Math.max(clip.start, Math.min(video.duration - 0.04, clip.end - 0.04));
+      await new Promise((resolve, reject) => {
+        video.addEventListener("seeked", resolve, { once: true });
+        video.addEventListener("error", () => reject(new Error("خواندن فریم پایانی ممکن نشد.")), { once: true });
+        video.currentTime = target;
+        if (Math.abs(video.currentTime - target) < 0.001 && video.readyState >= 2) resolve();
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = 360;
+      canvas.height = 640;
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#07111f";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const scale = (refs.fitMode.value === "contain" ? Math.min : Math.max)(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+      const width = video.videoWidth * scale;
+      const height = video.videoHeight * scale;
+      context.drawImage(video, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+      const image = canvas.toDataURL("image/jpeg", 0.86);
+      state.preview.freezeCache.set(key, image);
+      return image;
+    } finally {
+      video.removeAttribute("src");
+      video.load();
+      state.preview.freezePending.delete(key);
+    }
+  })();
+  state.preview.freezePending.set(key, pending);
+  return pending;
+}
+
+function updateTransitionPreview(time) {
+  const video = refs.mixPreviewVideo;
+  const freeze = refs.mixTransitionFreeze;
+  video.style.transform = "";
+  video.style.opacity = "";
+  freeze.style.transform = "";
+  freeze.style.opacity = "";
+  freeze.style.clipPath = "";
+  freeze.hidden = true;
+  const segment = previewSegmentAt(time);
+  if (!segment) return;
+  const previous = state.preview.segments[segment.index - 1];
+  if (!previous) return;
+  const transition = selectedTransition(previous.clip, segment.clip);
+  if (!transition) return;
+  if (time < segment.start || time >= segment.start + transition.duration) return;
+  const key = transitionFreezeKey(previous.clip);
+  const image = state.preview.freezeCache.get(key);
+  if (!image) {
+    prepareTransitionFreeze(previous.clip).then(() => {
+      if (refs.mixPreviewDialog.open) updateTransitionPreview(state.preview.globalTime);
+    }).catch(() => {});
+    return;
+  }
+  if (freeze.src !== image) freeze.src = image;
+  freeze.hidden = false;
+  const progress = Math.max(0, Math.min(1, (time - segment.start) / transition.duration));
+  if (transition.type === "fade") freeze.style.opacity = 1 - progress;
+  if (transition.type === "zoom") {
+    freeze.style.opacity = 1 - progress;
+    freeze.style.transform = `scale(${1 + progress * 0.12})`;
+    video.style.transform = `scale(${1.12 - progress * 0.12})`;
+  }
+  if (transition.type === "slide") {
+    freeze.style.transform = `translateX(${-progress * 100}%)`;
+    video.style.transform = `translateX(${(1 - progress) * 100}%)`;
+  }
+  if (transition.type === "wipe") freeze.style.clipPath = `inset(0 0 0 ${progress * 100}%)`;
+  if (transition.type === "black") {
+    freeze.style.opacity = Math.max(0, 1 - 2 * progress);
+    video.style.opacity = Math.max(0, Math.min(1, 2 * progress - 1));
+  }
+}
+
 function updateMixPreviewUI(time) {
   const safeTime = Math.max(0, Math.min(Number(time) || 0, state.preview.total));
   state.preview.globalTime = safeTime;
@@ -717,6 +837,7 @@ function updateMixPreviewUI(time) {
   refs.mixPreviewTotal.textContent = formatTime(state.preview.total);
   setRangeVisual(refs.mixPreviewSeek);
   updatePreviewCaption(safeTime);
+  updateTransitionPreview(safeTime);
 }
 
 function ensurePreviewAudioGraph() {
@@ -833,6 +954,9 @@ function runMixPreviewFrame() {
       .catch((error) => { pauseMixPreview(); showToast(error.message); });
     return;
   }
+  if (segment.end - time < 0.85 && selectedTransition(segment.clip, state.preview.segments[segment.index + 1]?.clip)) {
+    prepareTransitionFreeze(segment.clip).catch(() => {});
+  }
   updateMixPreviewUI(time);
   syncPreviewAudio(time, true);
   state.preview.frame = requestAnimationFrame(runMixPreviewFrame);
@@ -855,7 +979,7 @@ async function playMixPreview() {
   }
 }
 
-async function openMixPreview() {
+async function openMixPreview(startTime = 0) {
   if (!state.clips.length) return;
   closePreview();
   buildPreviewSegments();
@@ -867,10 +991,15 @@ async function openMixPreview() {
   }
   refs.mixPreviewVideo.style.objectFit = refs.fitMode.value === "contain" ? "contain" : "cover";
   state.preview.index = -1;
-  state.preview.globalTime = 0;
+  state.preview.globalTime = Math.max(0, Math.min(startTime, state.preview.total));
   applyCaptionStyle();
   refs.mixPreviewDialog.showModal();
-  await loadMixPreviewAt(0, false);
+  const startSegment = previewSegmentAt(state.preview.globalTime);
+  await loadMixPreviewAt(state.preview.globalTime, false);
+  if (startSegment?.index > 0) await prepareTransitionFreeze(state.preview.segments[startSegment.index - 1].clip).catch(() => {});
+  if (startSegment && selectedTransition(startSegment.clip, state.preview.segments[startSegment.index + 1]?.clip)) {
+    prepareTransitionFreeze(startSegment.clip).catch(() => {});
+  }
 }
 
 function closeMixPreview() {
@@ -912,6 +1041,23 @@ function handleClipField(event) {
     clip.volume = Math.round(Number(event.target.value));
     event.target.closest("label").querySelector("output").textContent = `${toFaDigits(clip.volume)}٪`;
     setRangeVisual(event.target);
+  }
+
+  if (field === "transition" || field === "transitionSeconds") {
+    const previousType = clip.transition;
+    const previousDuration = clip.transitionSeconds;
+    if (field === "transition") clip.transition = TRANSITIONS[event.target.value] ? event.target.value : "none";
+    else clip.transitionSeconds = Number(event.target.value);
+    try {
+      selectedTransition(clip, state.clips[state.clips.indexOf(clip) + 1]);
+    } catch (error) {
+      clip.transition = previousType;
+      clip.transitionSeconds = previousDuration;
+      showToast(error.message);
+    }
+    renderClipCards();
+    saveDraft();
+    return;
   }
 
   if (field === "start") {
@@ -992,6 +1138,8 @@ function getRecipe() {
         end: clip.end,
         duration: clip.duration,
         sourceAudioPercent: clip.volume,
+        transition: clip.transition,
+        transitionSeconds: clip.transitionSeconds,
       })),
       narration: state.narration ? { name: state.narration.file.name, size: state.narration.file.size, volume: Number($("#narrationVolume").value) } : null,
       music: state.music ? { name: state.music.file.name, size: state.music.file.size, volume: Number($("#musicVolume").value) } : null,
@@ -1206,6 +1354,29 @@ async function cleanupFiles(ffmpeg, names) {
   }
 }
 
+function buildTransitionGraph(clips) {
+  const parts = [];
+  for (let index = 0; index < clips.length; index += 1) {
+    const transition = selectedTransition(clips[index], clips[index + 1]);
+    const padding = transition ? `,tpad=stop_mode=clone:stop_duration=${formatDecimal(transition.duration)}` : "";
+    parts.push(`[${index}:v]settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p${padding}[v${index}]`);
+  }
+  let previous = "[v0]";
+  let offset = clipDuration(clips[0]);
+  for (let index = 1; index < clips.length; index += 1) {
+    const transition = selectedTransition(clips[index - 1], clips[index]);
+    const output = `[chain${index}]`;
+    if (transition) {
+      parts.push(`${previous}[v${index}]xfade=transition=${TRANSITIONS[transition.type].ffmpeg}:duration=${formatDecimal(transition.duration)}:offset=${offset.toFixed(3)}${output}`);
+    } else {
+      parts.push(`${previous}[v${index}]concat=n=2:v=1:a=0${output}`);
+    }
+    previous = output;
+    offset += clipDuration(clips[index]);
+  }
+  return { graph: parts.join(";"), output: previous, duration: offset };
+}
+
 async function renderVideo() {
   if (!state.clips.length || state.rendering) return;
   state.rendering = true;
@@ -1227,6 +1398,7 @@ async function renderVideo() {
     const height = size === 720 ? 1280 : 1920;
     const settings = encodeSettings();
     const segmentNames = [];
+    const hasTransitions = state.clips.some((clip, index) => selectedTransition(clip, state.clips[index + 1]));
 
     for (let index = 0; index < state.clips.length; index += 1) {
       if (state.cancelled) throw new DOMException("پردازش لغو شد.", "AbortError");
@@ -1275,12 +1447,23 @@ async function renderVideo() {
     updateRenderProgress(0.65, "اتصال کلیپ‌ها", "کلیپ‌ها با ترتیب انتخاب‌شده به هم متصل می‌شوند.");
     const concatResult = await ffmpeg.exec(["-f", "concat", "-safe", "0", "-i", "concat.txt", "-c", "copy", "joined.mp4"]);
     if (concatResult !== 0) throw new Error("اتصال کلیپ‌ها کامل نشد.");
+    if (hasTransitions) {
+      if (state.cancelled) throw new DOMException("پردازش لغو شد.", "AbortError");
+      updateRenderProgress(0.71, "ساخت ترنزیشن‌ها", "جلوهٔ انتخاب‌شده برای هر گذار روی تصویر اعمال می‌شود.");
+      const { graph, output, duration } = buildTransitionGraph(state.clips);
+      workingFiles.push("transitioned.mp4");
+      const transitionArgs = segmentNames.flatMap((name) => ["-i", name]);
+      transitionArgs.push("-filter_complex", graph, "-map", output, "-an", "-c:v", "libx264", "-preset", settings.preset, "-crf", settings.crf, "-r", "30", "-t", formatDecimal(duration), "-movflags", "+faststart", "transitioned.mp4");
+      const transitionResult = await ffmpeg.exec(transitionArgs);
+      if (transitionResult !== 0) throw new Error("ساخت ترنزیشن‌ها کامل نشد. گزارش فنی را بررسی کنید.");
+    }
     await cleanupFiles(ffmpeg, [...segmentNames, "concat.txt"]);
 
-    const finalArgs = ["-i", "joined.mp4"];
+    const audioSourceIndex = hasTransitions ? 1 : 0;
+    const finalArgs = hasTransitions ? ["-i", "transitioned.mp4", "-i", "joined.mp4"] : ["-i", "joined.mp4"];
     const audioLabels = ["[a0]"];
-    const filterParts = ["[0:a]volume=1,aresample=48000[a0]"];
-    let inputIndex = 1;
+    const filterParts = [`[${audioSourceIndex}:a]volume=1,aresample=48000[a0]`];
+    let inputIndex = audioSourceIndex + 1;
 
     if (state.narration) {
       const name = `narration.${extensionOf(state.narration.file, "mp3")}`;
@@ -1334,7 +1517,7 @@ async function renderVideo() {
         parts.push(`${source}[${logoInputIndex}:v]overlay=${x}:${y}:shortest=1:format=auto,format=yuv420p[vout]`);
       }
       if (parts.length) args.push("-filter_complex", parts.join(";"));
-      args.push("-map", logoInfo ? "[vout]" : "0:v:0", "-map", audioLabels.length > 1 ? "[aout]" : "0:a:0");
+      args.push("-map", logoInfo ? "[vout]" : "0:v:0", "-map", audioLabels.length > 1 ? "[aout]" : `${audioSourceIndex}:a:0`);
       if (withCaptions && !logoInfo) args.push("-vf", "subtitles=captions.ass:fontsdir=.");
       if (withCaptions || logoInfo) args.push("-c:v", "libx264", "-preset", settings.preset, "-crf", settings.crf);
       else args.push("-c:v", "copy");
@@ -1465,6 +1648,12 @@ function wireEvents() {
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (!card || !action) return;
     if (action === "preview") openPreview(state.clips.find((clip) => clip.id === card.dataset.id));
+    if (action === "preview-transition") {
+      const index = state.clips.findIndex((clip) => clip.id === card.dataset.id);
+      const boundary = state.clips.slice(0, index + 1).reduce((sum, clip) => sum + clipDuration(clip), 0);
+      prepareTransitionFreeze(state.clips[index]).catch(() => {});
+      openMixPreview(Math.max(0, boundary - 0.2)).catch((error) => showToast(error.message));
+    }
     if (action === "up") moveClip(card.dataset.id, -1);
     if (action === "down") moveClip(card.dataset.id, 1);
     if (action === "delete") deleteClip(card.dataset.id);

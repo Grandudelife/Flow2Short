@@ -10,7 +10,7 @@
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.png" type="image/png" sizes="48x48" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-    <link rel="stylesheet" href="./styles.css?v=1.6" />
+    <link rel="stylesheet" href="./styles.css?v=1.7" />
   </head>
   <body>
     <a class="skip-link" href="#workspace">رفتن به محیط تدوین</a>
@@ -87,7 +87,7 @@
           <div class="section-heading">
             <div>
               <h1 id="clipsHeading">کلیپ‌ها را مرتب و تنظیم کنید</h1>
-              <p>ترتیب، برش و صدای محیطی هر کلیپ را جداگانه کنترل کنید.</p>
+              <p>ترتیب، برش، صدای محیطی و ترنزیشن به کلیپ بعدی را جداگانه کنترل کنید.</p>
             </div>
             <button class="quiet-button" id="sampleButton" type="button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18"/></svg>
@@ -339,12 +339,13 @@
 
     <dialog id="mixPreviewDialog" class="mix-preview-dialog">
       <div class="mix-preview-head">
-        <div><h2>پیش‌نمایش ترکیب نهایی</h2><p>برش کلیپ‌ها، صدای اصلی، نریشن، موسیقی و زیرنویس با هم پخش می‌شوند.</p></div>
+        <div><h2>پیش‌نمایش ترکیب نهایی</h2><p>برش کلیپ‌ها، ترنزیشن‌ها، صدای اصلی، نریشن، موسیقی و زیرنویس با هم پخش می‌شوند.</p></div>
         <button class="icon-button" id="closeMixPreview" type="button" aria-label="بستن پیش‌نمایش"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </div>
       <div class="mix-preview-layout">
         <div class="mix-preview-stage" id="mixPreviewStage">
           <video id="mixPreviewVideo" playsinline preload="metadata"></video>
+          <img id="mixTransitionFreeze" class="transition-freeze" alt="" hidden />
           <img id="mixPreviewLogo" class="mix-preview-logo" alt="لوگوی انتخاب‌شده" hidden />
           <div class="mix-caption-layer"><p class="styled-caption" id="mixPreviewCaption" hidden></p></div>
           <span class="preview-clip-name" id="mixPreviewClipName" dir="ltr"></span>
@@ -392,6 +393,6 @@
 
     <input id="projectImportInput" type="file" accept="application/json,.json" hidden />
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script defer src="./app.js?v=1.6"></script>
+    <script defer src="./app.js?v=1.7"></script>
   </body>
 </html>
