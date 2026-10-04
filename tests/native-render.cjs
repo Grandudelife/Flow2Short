@@ -15,7 +15,7 @@ async function main() {
   const token = randomUUID() + randomUUID();
   const executable = name => path.join(resources, name + (process.platform === 'win32' ? '.exe' : ''));
   const service = spawn(executable('flow2short-server'), ['--desktop'], {
-    cwd: resources, env: { ...process.env, FLOW2SHORT_DESKTOP_TOKEN: token, XDG_CONFIG_HOME: path.join(fixtures, 'test-config'), ...(process.platform === 'win32' ? {APPDATA:path.join(fixtures, 'test-config')} : {}) }, stdio: ['pipe', 'pipe', 'inherit']
+    cwd: resources, env: { ...process.env, FLOW2SHORT_DESKTOP_TOKEN: token, XDG_CONFIG_HOME: path.join(fixtures, 'test-config'), ...(process.platform === 'win32' ? {LOCALAPPDATA:path.join(fixtures, 'test-config')} : {}) }, stdio: ['pipe', 'pipe', 'inherit']
   });
   const base = await new Promise((resolve, reject) => {
     let line = '';

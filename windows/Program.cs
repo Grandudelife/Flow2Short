@@ -170,7 +170,7 @@ internal sealed class StudioForm : Form
                 StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
             };
             info.Environment["FLOW2SHORT_DESKTOP_TOKEN"] = token;
-            if (smokeReport != null) info.Environment["APPDATA"] = Path.Combine(data, "test-config");
+            if (smokeReport != null) info.Environment["LOCALAPPDATA"] = Path.Combine(data, "test-config");
             job = new ChildJob();
             service = new Process { StartInfo = info, EnableRaisingEvents = true };
             service.ErrorDataReceived += (_, _) => { }; // Drain the pipe without retaining user request data.

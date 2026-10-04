@@ -1,6 +1,9 @@
 import base64
 import json
+import os
 import pathlib
+import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -17,7 +20,18 @@ class GoogleStudioTests(unittest.TestCase):
             with patch("google_studio.config_path", return_value=target):
                 save_key("AQ.Ab123_456-789.example")
                 self.assertEqual(read_key(), "AQ.Ab123_456-789.example")
-                self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+                if os.name == 'nt':
+                    # Windows uses inherited user ACLs, not POSIX permission bits.
+                    acl = subprocess.run(
+                        ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
+                         '(Get-Acl -LiteralPath $env:FLOW2SHORT_TEST_KEY_PATH).Sddl'],
+                        env={**os.environ, 'FLOW2SHORT_TEST_KEY_PATH': str(target)},
+                        capture_output=True, text=True, check=True).stdout
+                    self.assertTrue(acl.strip(), 'Windows ACL was unavailable')
+                    self.assertIsNone(re.search(r'\(A;[^)]*;(?:WD|BU|AU|S-1-1-0|S-1-5-11|S-1-5-32-545)\)', acl),
+                                      'API key readable by broad Windows user groups')
+                else:
+                    self.assertEqual(target.stat().st_mode & 0o777, 0o600)
 
     def test_voice_filter_and_speech_metadata_are_sent_to_google(self):
         wav = b"RIFF" + b"\0" * 4 + b"WAVE" + b"\0" * 40
