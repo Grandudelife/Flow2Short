@@ -26,8 +26,10 @@ class GoogleStudioTests(unittest.TestCase):
                     result = subprocess.run(['icacls.exe', str(target), '/save', str(acl_file)],
                                             capture_output=True, text=True)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    acl = acl_file.read_text(encoding='utf-16')
+                    raw_acl = acl_file.read_bytes()
+                    acl = raw_acl.decode('utf-16-le' if b'\0' in raw_acl else 'utf-8-sig').lstrip('\ufeff')
                     self.assertTrue(acl.strip(), 'Windows ACL was unavailable')
+                    self.assertIn('D:', acl, 'Windows discretionary ACL was unavailable')
                     self.assertIsNone(re.search(r'\(A;[^)]*;(?:WD|BU|AU|S-1-1-0|S-1-5-11|S-1-5-32-545)\)', acl),
                                       'API key readable by broad Windows user groups')
                 else:
