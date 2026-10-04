@@ -8,6 +8,12 @@
 
 [دانلود بستهٔ آمادهٔ مک](https://github.com/Grandudelife/Flow2Short/releases/tag/macos-v1.0.0) · [راهنمای نصب و ساخت](https://github.com/Grandudelife/Flow2Short/blob/macos-native/macos/README.md)
 
+## نسخهٔ مخصوص ویندوز در دسترس است
+
+نسخهٔ مستقل **Flow2Short Studio for Windows** در شاخهٔ [`windows-native`](https://github.com/Grandudelife/Flow2Short/tree/windows-native) منتشر شده است. فایل EXE قابل حمل برای ویندوز ۱۱ و ویندوز ۱۰ نسخهٔ ۱۸۰۹ به بالا با پردازندهٔ Intel/AMD ۶۴بیتی، پنجره و منوهای بومی و رندر محلی با FFmpeg بومی دارد. .NET داخل فایل اجرایی قرار دارد و Microsoft Edge WebView2 Runtime باید نصب باشد. تصویر فعلی اپلیکیشن حفظ شده است.
+
+[دانلود فایل EXE ویندوز](https://github.com/Grandudelife/Flow2Short/releases/tag/windows-v1.0.0) · [راهنمای نسخهٔ ویندوز](https://github.com/Grandudelife/Flow2Short/blob/windows-native/windows/README.md)
+
 ![Flow2Short Studio](design/flow2short-approved-comp.png)
 
 ## امکانات
