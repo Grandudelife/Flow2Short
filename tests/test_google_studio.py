@@ -22,11 +22,11 @@ class GoogleStudioTests(unittest.TestCase):
                 self.assertEqual(read_key(), "AQ.Ab123_456-789.example")
                 if os.name == 'nt':
                     # Windows uses inherited user ACLs, not POSIX permission bits.
-                    acl = subprocess.run(
-                        ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
-                         '(Get-Acl -LiteralPath $env:FLOW2SHORT_TEST_KEY_PATH).Sddl'],
-                        env={**os.environ, 'FLOW2SHORT_TEST_KEY_PATH': str(target)},
-                        capture_output=True, text=True, check=True).stdout
+                    acl_file = pathlib.Path(directory) / 'key-acl.txt'
+                    result = subprocess.run(['icacls.exe', str(target), '/save', str(acl_file)],
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    acl = acl_file.read_text(encoding='utf-16')
                     self.assertTrue(acl.strip(), 'Windows ACL was unavailable')
                     self.assertIsNone(re.search(r'\(A;[^)]*;(?:WD|BU|AU|S-1-1-0|S-1-5-11|S-1-5-32-545)\)', acl),
                                       'API key readable by broad Windows user groups')
