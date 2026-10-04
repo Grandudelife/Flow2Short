@@ -1,7 +1,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"mime"
 	"net"
@@ -42,6 +44,8 @@ func openBrowser(url string) error {
 }
 
 func main() {
+	desktop := flag.Bool("desktop", false, "Run inside the macOS application")
+	flag.Parse()
 	appDir := appDirectory()
 	if appDir == "" {
 		log.Fatal("پوشه app کنار برنامه پیدا نشد.")
@@ -53,6 +57,9 @@ func main() {
 	var listener net.Listener
 	var err error
 	port := 43121
+	if *desktop {
+		port = 0
+	}
 	for attempt := 0; attempt < 10; attempt++ {
 		listener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port+attempt))
 		if err == nil {
@@ -63,11 +70,30 @@ func main() {
 	if err != nil {
 		log.Fatal("درگاه محلی آزاد پیدا نشد: ", err)
 	}
+	port = listener.Addr().(*net.TCPAddr).Port
+	var native *nativeEngine
+	if *desktop {
+		native, err = newNativeEngine()
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer native.close()
+	}
 
 	files := http.FileServer(http.Dir(appDir))
 	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.Header().Set("X-Content-Type-Options", "nosniff")
 		response.Header().Set("Referrer-Policy", "no-referrer")
+		response.Header().Set("Cache-Control", "no-store")
+		if *desktop && len(request.URL.Path) >= 3 && request.URL.Path[:3] == "/__" {
+			if !native.authorized(request, port) {
+				http.Error(response, "Forbidden", 403)
+				return
+			}
+			if native.serveHTTP(response, request) {
+				return
+			}
+		}
 		if request.URL.Path == "/__transcribe" {
 			transcribeHTTP(response, request, port)
 			return
@@ -86,15 +112,26 @@ func main() {
 
 	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
-	go func() {
-		time.Sleep(350 * time.Millisecond)
-		if err := openBrowser(url); err != nil {
-			log.Printf("مرورگر خودکار باز نشد؛ این آدرس را باز کنید: %s", url)
-		}
-	}()
+	if *desktop {
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			native.close()
+			_ = server.Close()
+		}()
+		fmt.Println(url)
+	} else {
+		go func() {
+			time.Sleep(350 * time.Millisecond)
+			if err := openBrowser(url); err != nil {
+				log.Printf("مرورگر خودکار باز نشد؛ این آدرس را باز کنید: %s", url)
+			}
+		}()
+	}
 
-	fmt.Println("Flow2Short Studio در مرورگر باز شد.")
-	fmt.Println("برای بستن برنامه این پنجره را ببندید.")
+	if !*desktop {
+		fmt.Println("Flow2Short Studio در مرورگر باز شد.")
+		fmt.Println("برای بستن برنامه این پنجره را ببندید.")
+	}
 	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

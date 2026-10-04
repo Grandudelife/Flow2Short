@@ -1,0 +1,66 @@
+name: Build and publish macOS app
+
+on:
+  push:
+    branches: [macos-native]
+    paths:
+      - 'app/**'
+      - 'server/**'
+      - 'macos/**'
+      - 'tests/**'
+      - '.github/workflows/macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Test service and interface
+        run: |
+          (cd server && go test -race ./...)
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          node tests/preview-regression.cjs
+      - name: Build standalone Apple Silicon app
+        run: bash macos/build.sh "$GITHUB_WORKSPACE/dist"
+      - name: Verify real rendering and cancellation
+        run: |
+          RESOURCES="$GITHUB_WORKSPACE/dist/Flow2Short Studio.app/Contents/Resources"
+          FIXTURES="$RUNNER_TEMP/native-fixtures"
+          mkdir -p "$FIXTURES"
+          "$RESOURCES/ffmpeg" -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=360x640:rate=30' -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 2 -c:v libx264 -pix_fmt yuv420p -c:a aac "$FIXTURES/clip-one.mp4"
+          "$RESOURCES/ffmpeg" -hide_banner -loglevel error -f lavfi -i 'color=c=navy:size=360x640:rate=30' -t 2 -c:v libx264 -pix_fmt yuv420p "$FIXTURES/clip-two-silent.mp4"
+          node tests/native-render.cjs "$RESOURCES" "$FIXTURES"
+      - name: Package app and checksums
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent 'dist/Flow2Short Studio.app' dist/Flow2Short-Mac.zip
+          (cd dist && shasum -a 256 Flow2Short-Mac.zip > SHA256SUMS.txt)
+          unzip -t dist/Flow2Short-Mac.zip > /dev/null
+      - name: Publish first macOS prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=macos-v1.0.0
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $TAG already exists; preserving its original assets."
+          else
+            gh release create "$TAG" dist/Flow2Short-Mac.zip dist/SHA256SUMS.txt \
+              --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+              --title 'Flow2Short Studio for macOS 1.0.0' --notes-file macos/RELEASE_NOTES.md
+          fi

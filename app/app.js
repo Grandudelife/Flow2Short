@@ -2088,7 +2088,7 @@ async function ensureFFmpeg() {
   }
 
   updateRenderProgress(0.03, "در حال آماده‌سازی موتور ویدئو", "موتور FFmpeg به‌صورت محلی از داخل برنامه بارگذاری می‌شود.");
-  const { FFmpeg } = await import(new URL("./vendor/ffmpeg/index.js", APP_BASE_URL).href);
+  const { FFmpeg } = await import(new URL(window.FLOW2SHORT_DESKTOP ? "./native-ffmpeg.js" : "./vendor/ffmpeg/index.js", APP_BASE_URL).href);
   const ffmpeg = new FFmpeg();
   ffmpeg.on("log", ({ message }) => {
     if (/error|invalid|failed/i.test(message)) addRenderLog(message.slice(0, 180));
