@@ -67,6 +67,13 @@ func TestNativeUploadsAndCleanup(t *testing.T) {
 	if string(data) != "media" {
 		t.Fatal("upload corrupted")
 	}
+	// Windows must also replace a previously uploaded filename after its handle closes.
+	w = httptest.NewRecorder()
+	n.serveHTTP(w, httptest.NewRequest("PUT", "http://localhost/__native/file?name=input-0.mp4", strings.NewReader("replacement")))
+	data, _ = os.ReadFile(filepath.Join(root, "input-0.mp4"))
+	if w.Code != 200 || string(data) != "replacement" {
+		t.Fatal("replacing an existing upload failed")
+	}
 	bad := httptest.NewRequest("PUT", "http://localhost/__native/file?name=concat.txt", strings.NewReader("file '/etc/passwd'"))
 	w = httptest.NewRecorder()
 	n.serveHTTP(w, bad)

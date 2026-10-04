@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -38,7 +39,7 @@ func newNativeEngine() (*nativeEngine, error) {
 	}
 	bin := filepath.Dir(executable)
 	for _, name := range []string{"ffmpeg", "ffprobe"} {
-		if _, err = os.Stat(filepath.Join(bin, name)); err != nil {
+		if _, err = os.Stat(filepath.Join(bin, nativeExecutable(name))); err != nil {
 			return nil, err
 		}
 	}
@@ -47,6 +48,13 @@ func newNativeEngine() (*nativeEngine, error) {
 		return nil, err
 	}
 	return &nativeEngine{root: root, bin: bin, token: token}, nil
+}
+
+func nativeExecutable(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
 
 func (n *nativeEngine) authorized(r *http.Request, port int) bool {
@@ -262,7 +270,8 @@ func (n *nativeEngine) serveHTTP(w http.ResponseWriter, r *http.Request) bool {
 			name = "ffprobe"
 			args = append([]string{"-hide_banner"}, payload.Args...)
 		}
-		command := exec.CommandContext(ctx, filepath.Join(n.bin, name), args...)
+		command := exec.CommandContext(ctx, filepath.Join(n.bin, nativeExecutable(name)), args...)
+		configureNativeCommand(command)
 		command.Dir = n.root
 		log := &tailLog{}
 		command.Stdout = log

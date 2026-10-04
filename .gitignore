@@ -1,5 +1,8 @@
 .DS_Store
 .build-macos/
+.build-windows/
+windows/bin/
+windows/obj/
 dist/
 __pycache__/
 *.pyc

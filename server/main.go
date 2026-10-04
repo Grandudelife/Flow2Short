@@ -44,7 +44,7 @@ func openBrowser(url string) error {
 }
 
 func main() {
-	desktop := flag.Bool("desktop", false, "Run inside the macOS application")
+	desktop := flag.Bool("desktop", false, "Run inside the native desktop application")
 	flag.Parse()
 	appDir := appDirectory()
 	if appDir == "" {

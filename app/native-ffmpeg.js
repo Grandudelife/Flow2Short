@@ -1,4 +1,4 @@
-// Same editor API as ffmpeg.wasm; media is rendered by the bundled macOS binary.
+// Same editor API as ffmpeg.wasm; media is rendered by the bundled desktop binary.
 export class FFmpeg {
   constructor() { this.listeners = new Map(); this.stopped = false; this.pendingStop = null; }
   on(event, callback) { this.listeners.set(event, callback); }
@@ -7,7 +7,7 @@ export class FFmpeg {
     const response = await fetch(`/__native/${path}`, options);
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `موتور بومی مک: ${response.status}`);
+      throw new Error(error.error || `موتور بومی: ${response.status}`);
     }
     return response;
   }

@@ -13,8 +13,9 @@ async function main() {
   const fixtures = process.argv[3];
   assert.ok(resources && fixtures, 'Pass app Resources and fixture directories');
   const token = randomUUID() + randomUUID();
-  const service = spawn(path.join(resources, 'flow2short-server'), ['--desktop'], {
-    cwd: resources, env: { ...process.env, FLOW2SHORT_DESKTOP_TOKEN: token, XDG_CONFIG_HOME: path.join(fixtures, 'test-config') }, stdio: ['pipe', 'pipe', 'inherit']
+  const executable = name => path.join(resources, name + (process.platform === 'win32' ? '.exe' : ''));
+  const service = spawn(executable('flow2short-server'), ['--desktop'], {
+    cwd: resources, env: { ...process.env, FLOW2SHORT_DESKTOP_TOKEN: token, XDG_CONFIG_HOME: path.join(fixtures, 'test-config'), ...(process.platform === 'win32' ? {APPDATA:path.join(fixtures, 'test-config')} : {}) }, stdio: ['pipe', 'pipe', 'inherit']
   });
   const base = await new Promise((resolve, reject) => {
     let line = '';
@@ -72,7 +73,7 @@ async function main() {
     assert.ok(outputURL, 'Real editor render failed: ' + element('renderMessage').textContent);
     const bytes = Buffer.from(await (await originalFetch(outputURL)).arrayBuffer());
     const outputPath = path.join(fixtures, 'native-render-test.mp4'); fs.writeFileSync(outputPath, bytes);
-    const probe = JSON.parse(execFileSync(path.join(resources, 'ffprobe'), ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', outputPath]));
+    const probe = JSON.parse(execFileSync(executable('ffprobe'), ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', outputPath]));
     const video = probe.streams.find(s => s.codec_type === 'video');
     assert.equal(video.width, 720); assert.equal(video.height, 1280);
     assert.equal(video.codec_name, 'h264'); assert.ok(probe.streams.some(s => s.codec_type === 'audio'));

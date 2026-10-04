@@ -1,0 +1,94 @@
+name: Build and publish Windows app
+
+on:
+  push:
+    branches: [windows-native]
+    paths: ['app/**', 'server/**', 'windows/**', 'tests/**', '.github/workflows/windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test service and interface
+        run: |
+          Push-Location server
+          go test -race ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Go tests failed' }
+          Pop-Location
+          python -m unittest discover -s tests -p 'test_*.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Python tests failed' }
+          node tests/preview-regression.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Preview tests failed' }
+      - name: Build standalone EXE
+        run: ./windows/build.ps1 -Destination "$env:GITHUB_WORKSPACE/dist/windows"
+      - name: Verify rendering and cancellation on Windows
+        run: |
+          $resources = "$env:GITHUB_WORKSPACE/.build-windows/payload"
+          $fixtures = "$env:RUNNER_TEMP/native-fixtures"
+          New-Item -ItemType Directory -Force $fixtures | Out-Null
+          & "$resources/ffmpeg.exe" -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=360x640:rate=30' -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 2 -c:v libx264 -pix_fmt yuv420p -c:a aac "$fixtures/clip-one.mp4"
+          if ($LASTEXITCODE -ne 0) { throw 'First fixture failed' }
+          & "$resources/ffmpeg.exe" -hide_banner -loglevel error -f lavfi -i 'color=c=navy:size=360x640:rate=30' -t 2 -c:v libx264 -pix_fmt yuv420p "$fixtures/clip-two-silent.mp4"
+          if ($LASTEXITCODE -ne 0) { throw 'Second fixture failed' }
+          node tests/native-render.cjs $resources $fixtures
+          if ($LASTEXITCODE -ne 0) { throw 'Native render test failed' }
+      - name: Ensure Microsoft WebView2 Runtime
+        run: |
+          $keys = @('HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}')
+          $available = $keys | ForEach-Object { (Get-ItemProperty $_ -Name pv -ErrorAction SilentlyContinue).pv } | Where-Object { $_ -and $_ -ne '0.0.0.0' }
+          if ($available) { Write-Host 'WebView2 Runtime already installed'; exit 0 }
+          $installer = "$env:RUNNER_TEMP/MicrosoftEdgeWebview2Setup.exe"
+          Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw 'Microsoft installer signature invalid' }
+          $process = Start-Process $installer -ArgumentList '/silent', '/install' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "WebView2 installation failed: $($process.ExitCode)" }
+      - name: Run the packaged EXE twice
+        run: ./windows/test.ps1 -Executable "$env:GITHUB_WORKSPACE/dist/windows/Flow2Short-Windows.exe" -Reports "$env:GITHUB_WORKSPACE/dist/windows-tests"
+      - name: Retain desktop verification reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-desktop-verification
+          path: |
+            dist/windows-tests/*.json
+            dist/windows-tests/*.png
+          if-no-files-found: ignore
+      - name: Publish first Windows prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $exe = 'dist/windows/Flow2Short-Windows.exe'
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText("$env:GITHUB_WORKSPACE/dist/windows/SHA256SUMS-Windows.txt", "$hash  Flow2Short-Windows.exe`n", [Text.Encoding]::ASCII)
+          gh release view windows-v1.0.0 --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'Windows release already exists; preserving its original assets.'
+          } else {
+            gh release create windows-v1.0.0 $exe dist/windows/SHA256SUMS-Windows.txt --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title 'Flow2Short Studio for Windows 1.0.0' --notes-file windows/RELEASE_NOTES.md
+            if ($LASTEXITCODE -ne 0) { throw 'Windows release publication failed' }
+          }

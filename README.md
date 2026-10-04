@@ -12,6 +12,16 @@
 
 نسخهٔ مک بدون Python، Go، مرورگر یا ترمینال اجرا می‌شود. پنجره و منوهای macOS، انتخاب و ذخیرهٔ فایل بومی و موتور FFmpeg بومی دارد؛ رابط فارسی فعلی در WebKit داخلی برنامه نمایش داده می‌شود. خروجی ویدئو روی دستگاه ساخته می‌شود. امکانات Gemini همچنان به اینترنت و کلید API نیاز دارند. این نسخه فعلاً با امضای محلی ad-hoc عرضه می‌شود و notarized نیست؛ مک‌های Intel در این بسته پشتیبانی نمی‌شوند.
 
+## نسخهٔ مستقل ویندوز در دسترس است
+
+نسخهٔ **Flow2Short Studio for Windows** در شاخهٔ [`windows-native`](https://github.com/Grandudelife/Flow2Short/tree/windows-native) منتشر شده است.
+
+- [دانلود فایل EXE آمادهٔ ویندوز](https://github.com/Grandudelife/Flow2Short/releases/tag/windows-v1.0.0): فایل `Flow2Short-Windows.exe` را دانلود و اجرا کنید.
+- [راهنمای نصب، میان‌برها و ساخت از سورس](windows/README.md)
+- [وضعیت ساخت و تست روی ویندوز](https://github.com/Grandudelife/Flow2Short/actions/workflows/windows.yml)
+
+این بسته برای ویندوز ۱۱ و ویندوز ۱۰ نسخهٔ ۱۸۰۹ به بالا، با پردازندهٔ Intel/AMD ۶۴بیتی است. موتور FFmpeg و .NET داخل EXE قرار دارند؛ تنها Microsoft Edge WebView2 Runtime باید نصب باشد. رابط فارسی در WebView2 داخلی و پنجره/منوها و ذخیرهٔ فایل بومی ویندوز هستند. تصویر و آیکون فعلی اپلیکیشن حفظ شده‌اند. EXE فعلاً امضای تجاری Authenticode ندارد.
+
 ![Flow2Short Studio](design/flow2short-approved-comp.png)
 
 ## امکانات
@@ -128,6 +138,7 @@ Workflow آماده در `.github/workflows/pages.yml` پوشه `app/` را من
 app/       رابط، PWA و موتور FFmpeg WebAssembly
 server/    لانچر محلی مک و ویندوز
 macos/     اپ مستقل مک، بسته‌بندی و راهنمای نصب
+windows/   اپ مستقل ویندوز، EXE و راهنمای نصب
 design/    مرجع بصری تأییدشده
 Start Flow2Short.command       اجرای دوبارکلیکی روی مک
 Start Flow2Short Windows.bat   اجرای دوبارکلیکی روی ویندوز
@@ -135,7 +146,7 @@ Start Flow2Short Windows.bat   اجرای دوبارکلیکی روی ویندو
 
 ## نکات فنی
 
-- در نسخهٔ وب پردازش ویدئو با FFmpeg WebAssembly انجام می‌شود؛ نسخهٔ مستقل مک از FFmpeg بومی استفاده می‌کند.
+- در نسخهٔ وب پردازش ویدئو با FFmpeg WebAssembly انجام می‌شود؛ نسخه‌های مستقل مک و ویندوز از FFmpeg بومی استفاده می‌کنند.
 - در صورت پشتیبانی‌نکردن build مرورگر از فیلتر زیرنویس، ویدئو بدون زیرنویس تصویری ساخته می‌شود و فایل SRT اصلی دست‌نخورده باقی می‌ماند.
 - Recipe پروژه فقط تنظیمات و نام فایل‌ها را ذخیره می‌کند؛ رسانه‌ها برای حفظ حریم خصوصی داخل JSON کپی نمی‌شوند.
 
