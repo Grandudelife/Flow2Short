@@ -2,6 +2,12 @@
 
 یک وب‌اپ فارسی، آفلاین و متن‌باز برای تبدیل کلیپ‌های Google Flow به ویدئوی عمودی آماده انتشار؛ بدون نیاز به خط فرمان یا نرم‌افزار تدوین حرفه‌ای.
 
+## نسخهٔ مخصوص مک‌بوک در دسترس است
+
+نسخهٔ مستقل **Flow2Short Studio for macOS** برای مک‌های **Apple Silicon (M1 و جدیدتر)** با **macOS 13 یا جدیدتر** در شاخهٔ [`macos-native`](https://github.com/Grandudelife/Flow2Short/tree/macos-native) منتشر شده است. این نسخه پنجره و منوهای بومی مک و رندر محلی با FFmpeg بومی دارد و بدون مرورگر یا ترمینال اجرا می‌شود.
+
+[دانلود بستهٔ آمادهٔ مک](https://github.com/Grandudelife/Flow2Short/releases/tag/macos-v1.0.0) · [راهنمای نصب و ساخت](https://github.com/Grandudelife/Flow2Short/blob/macos-native/macos/README.md)
+
 ![Flow2Short Studio](design/flow2short-approved-comp.png)
 
 ## امکانات
