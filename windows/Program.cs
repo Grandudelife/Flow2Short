@@ -193,15 +193,15 @@ internal sealed class StudioForm : Form
             core.WebMessageReceived += ReceiveMessage;
             core.DownloadStarting += DownloadStarting;
             core.ProcessFailed += (_, _) => { if (!closing) BeginInvoke((Action)(() => _ = FailAsync(new IOException("نمایشگر برنامه متوقف شد. برنامه را دوباره باز کنید.")))); };
-            web.AcceleratorKeyPressed += (_, e) =>
+            web.KeyDown += (_, e) =>
             {
-                if (e.KeyEventKind != CoreWebView2KeyEventKind.KeyDown || !ModifierKeys.HasFlag(Keys.Control)) return;
-                string? id = (Keys)e.VirtualKey switch
+                if (!e.Control) return;
+                string? id = e.KeyCode switch
                 {
                     Keys.I => "clipInput", Keys.O => "projectImportInput", Keys.S => "projectMenuButton",
-                    Keys.E when ModifierKeys.HasFlag(Keys.Shift) => "renderButton", Keys.Oemcomma => "settingsButton", _ => null
+                    Keys.E when e.Shift => "renderButton", Keys.Oemcomma => "settingsButton", _ => null
                 };
-                if (id != null) { e.Handled = true; BeginInvoke((Action)(() => _ = ClickEditor(id))); }
+                if (id != null) { e.Handled = true; e.SuppressKeyPress = true; BeginInvoke((Action)(() => _ = ClickEditor(id))); }
             };
             string config = JsonSerializer.Serialize(new { token, storage, origin = address.GetLeftPart(UriPartial.Authority) });
             await core.AddScriptToExecuteOnDocumentCreatedAsync($$"""

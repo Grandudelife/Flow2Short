@@ -3,6 +3,12 @@ $ErrorActionPreference = 'Stop'
 $Executable = [IO.Path]::GetFullPath($Executable)
 $Reports = [IO.Path]::GetFullPath($Reports)
 New-Item -ItemType Directory -Force $Reports | Out-Null
+# Test the downloaded-file scenario: no publish-directory sidecars can help it.
+$standalone = Join-Path $Reports 'standalone'
+New-Item -ItemType Directory -Force $standalone | Out-Null
+$isolatedExe = Join-Path $standalone 'Flow2Short-Windows.exe'
+Copy-Item $Executable $isolatedExe -Force
+$Executable = $isolatedExe
 $env:FLOW2SHORT_TEST_DATA = Join-Path $Reports 'isolated-user-data'
 function Invoke-Smoke([string]$name) {
     $report = Join-Path $Reports "$name.json"

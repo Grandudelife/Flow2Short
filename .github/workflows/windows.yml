@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: windows-release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -82,6 +82,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $branchHead = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/heads/windows-native" --jq '.object.sha'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot verify release source revision' }
+          if ($branchHead -ne $env:GITHUB_SHA) { Write-Host 'A newer branch revision exists; skipping this outdated build.'; exit 0 }
           $exe = 'dist/windows/Flow2Short-Windows.exe'
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText("$env:GITHUB_WORKSPACE/dist/windows/SHA256SUMS-Windows.txt", "$hash  Flow2Short-Windows.exe`n", [Text.Encoding]::ASCII)
