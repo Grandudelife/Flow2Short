@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fa" dir="rtl" data-app-version="2.3.0">
+<html lang="fa" dir="rtl" data-app-version="2.4.0">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -10,7 +10,7 @@
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.png" type="image/png" sizes="48x48" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-    <link rel="stylesheet" href="./styles.css?v=2.3.0" />
+    <link rel="stylesheet" href="./styles.css?v=2.4.0" />
   </head>
   <body>
     <a class="skip-link" href="#workspace">رفتن به محیط تدوین</a>
@@ -310,7 +310,7 @@
         <section id="logoStep" class="workspace-section" aria-labelledby="logoHeading">
           <div class="section-heading compact"><div><h2 id="logoHeading">واترمارک ویدئو</h2><p>لوگو را اضافه کنید و جایگاه و اندازه‌اش را روی قاب ببینید.</p></div></div>
           <div class="watermark-studio">
-            <div class="watermark-stage" aria-label="پیش‌نمایش محل لوگو روی قاب عمودی">
+            <div class="watermark-stage" aria-label="پیش‌نمایش محل لوگو روی قاب خروجی">
               <video id="logoStageVideo" class="watermark-stage-frame" muted playsinline preload="metadata" aria-label="فریم اولین کلیپ" hidden></video>
               <span id="logoStagePlaceholder">پیش‌نمایش قاب ویدئو</span>
               <img id="logoStageMark" class="mix-preview-logo" alt="پیش‌نمایش واترمارک" hidden />
@@ -374,10 +374,27 @@
 
           <div class="export-grid">
             <label class="field"><span>نام فایل خروجی</span><div class="input-suffix"><input id="outputName" value="YouTube-Short-Final" maxlength="80" dir="ltr" /><b>.mp4</b></div></label>
-            <label class="field"><span>ابعاد ویدئو</span><select id="resolution"><option value="1080">۱۰۸۰ × ۱۹۲۰ — Full HD</option><option value="720">۷۲۰ × ۱۲۸۰ — سبک‌تر</option></select></label>
+            <label class="field"><span>ابعاد خروجی (عرض × ارتفاع)</span>
+              <select id="resolution" aria-describedby="outputSizeHint">
+                <option value="source">هم‌اندازهٔ اولین کلیپ (پیش‌فرض)</option>
+                <option value="1080x1920">عمودی — ‎۱۰۸۰ × ۱۹۲۰</option>
+                <option value="720x1280">عمودی — ‎۷۲۰ × ۱۲۸۰</option>
+                <option value="1920x1080">افقی — ‎۱۹۲۰ × ۱۰۸۰</option>
+                <option value="1280x720">افقی — ‎۱۲۸۰ × ۷۲۰</option>
+                <option value="1080x1080">مربع — ‎۱۰۸۰ × ۱۰۸۰</option>
+                <option value="1080x1350">عمودی ۴:۵ — ‎۱۰۸۰ × ۱۳۵۰</option>
+                <option value="custom">ابعاد دلخواه</option>
+              </select>
+            </label>
             <label class="field"><span>نحوه پرکردن قاب</span><select id="fitMode"><option value="cover">پرکردن قاب و برش کناره‌ها</option><option value="contain">نمایش کامل با حاشیه تیره</option></select></label>
             <label class="field"><span>کیفیت</span><select id="quality"><option value="balanced">متعادل — پیشنهادی</option><option value="high">بالاتر — پردازش سنگین‌تر</option><option value="fast">سریع — حجم کمتر</option></select></label>
           </div>
+
+          <div class="custom-output-size" id="customOutputSize" hidden>
+            <label class="field"><span>عرض (پیکسل)</span><input id="customOutputWidth" type="number" dir="ltr" min="64" max="4096" step="2" value="1080" aria-describedby="outputSizeHint" /></label>
+            <label class="field"><span>ارتفاع (پیکسل)</span><input id="customOutputHeight" type="number" dir="ltr" min="64" max="4096" step="2" value="1920" aria-describedby="outputSizeHint" /></label>
+          </div>
+          <p id="outputSizeHint" class="output-size-hint" aria-live="polite">با افزودن اولین کلیپ، ابعاد خروجی مشخص می‌شود.</p>
 
           <div class="device-readiness" id="deviceReadiness">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-3.6 8-10V5l-8-3-8 3v7c0 6.4 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
@@ -391,7 +408,7 @@
       <div class="render-summary">
         <span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><small>مدت کل</small><strong id="totalDuration">۰۰:۰۰</strong></span>
         <span><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 5v14M16 5v14"/></svg><small>تعداد کلیپ</small><strong id="clipCount">۰</strong></span>
-        <span class="desktop-summary"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M8 8h8v8H8z"/></svg><small>خروجی</small><strong id="outputSummary">۱۰۸۰ × ۱۹۲۰</strong></span>
+        <span class="desktop-summary"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M8 8h8v8H8z"/></svg><small>خروجی</small><strong id="outputSummary" dir="ltr">—</strong></span>
       </div>
       <p class="local-note"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2"/><rect x="5" y="10" width="14" height="11" rx="2"/></svg>ساخت ویدئو محلی است؛ رونویسی با انتخاب شما انجام می‌شود</p>
       <div class="render-buttons">
@@ -446,7 +463,7 @@
           <span class="preview-clip-name" id="mixPreviewClipName" dir="ltr"></span>
         </div>
         <div class="mix-preview-panel">
-          <label class="safe-guide-toggle"><input id="showSafeGuide" type="checkbox" /> نمایش راهنمای محدودهٔ امن Shorts</label>
+          <label class="safe-guide-toggle" id="safeGuideToggle"><input id="showSafeGuide" type="checkbox" /> نمایش راهنمای محدودهٔ امن Shorts</label>
           <div class="preview-watermark-controls" dir="rtl">
             <div class="preview-watermark-head"><strong>واترمارک</strong><button id="previewChooseLogo" type="button">انتخاب لوگو</button></div>
             <input id="previewLogoInput" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden />
@@ -492,6 +509,6 @@
 
     <input id="projectImportInput" type="file" accept="application/json,.json" hidden />
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script defer src="./app.js?v=2.3.0"></script>
+    <script defer src="./app.js?v=2.4.0"></script>
   </body>
 </html>

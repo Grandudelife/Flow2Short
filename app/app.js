@@ -104,6 +104,8 @@ const refs = {
   outputSummary: $("#outputSummary"),
   outputName: $("#outputName"),
   resolution: $("#resolution"),
+  customOutputWidth: $("#customOutputWidth"),
+  customOutputHeight: $("#customOutputHeight"),
   fitMode: $("#fitMode"),
   quality: $("#quality"),
   renderDialog: $("#renderDialog"),
@@ -451,13 +453,17 @@ function applyLogoStyle() {
   $("#previewLogoSizeValue").textContent = `${toFaDigits(state.logoStyle.sizePercent)}٪`;
   setRangeVisual(refs.logoSize);
   setRangeVisual(refs.previewLogoSize);
-  const width = state.logo ? `${logoDimensions(1080, 1920, state.logo.width, state.logo.height).width / 1080 * 100}%` : "";
+  updateLogoPreviewSize();
+  $("#previewLogoName").textContent = state.logo ? state.logo.file.name : "هنوز لوگویی انتخاب نشده است.";
+}
+
+function updateLogoPreviewSize({ width, height } = outputDimensions() || { width: 1080, height: 1920 }) {
+  const logoWidth = state.logo ? `${logoDimensions(width, height, state.logo.width, state.logo.height).width / width * 100}%` : "";
   [refs.logoStageMark, refs.mixPreviewLogo].forEach((element) => {
     element.dataset.position = state.logoStyle.position;
-    element.style.width = width;
+    element.style.width = logoWidth;
     element.hidden = !state.logo;
   });
-  $("#previewLogoName").textContent = state.logo ? state.logo.file.name : "هنوز لوگویی انتخاب نشده است.";
 }
 
 async function setLogo(file) {
@@ -929,15 +935,15 @@ async function overlayPngBytes(item, frameWidth, frameHeight) {
   return { bytes: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height };
 }
 
-function getMediaDuration(file) {
+function getMediaMetadata(file, kind) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
-    const media = document.createElement(file.type.startsWith("video/") ? "video" : "audio");
+    const media = document.createElement(kind);
     media.preload = "metadata";
     media.onloadedmetadata = () => {
       const duration = Number.isFinite(media.duration) ? media.duration : 0;
       URL.revokeObjectURL(url);
-      resolve(duration);
+      resolve({ duration, width: media.videoWidth, height: media.videoHeight });
     };
     media.onerror = () => {
       URL.revokeObjectURL(url);
@@ -1003,13 +1009,15 @@ async function addClips(files) {
   try { importedRecipe = JSON.parse(localStorage.getItem("flow2short-imported-recipe") || localStorage.getItem("flow2short-draft") || "null"); } catch { /* ignore */ }
   for (const file of videoFiles) {
     try {
-      const [duration, thumbnail] = await Promise.all([getMediaDuration(file), createVideoThumbnail(file)]);
+      const [metadata, thumbnail] = await Promise.all([getMediaMetadata(file, "video"), createVideoThumbnail(file)]);
+      const { duration, width, height } = metadata;
+      if (!width || !height) throw new Error(`ابعاد ویدئوی ${file.name} قابل تشخیص نیست.`);
       const existing = state.clips.some((clip) => clip.name === file.name && clip.file.size === file.size);
       if (existing) continue;
       const matching = importedRecipe?.project?.clips?.filter((item) => item.name === file.name && (!item.size || item.size === file.size)) || [];
       for (const remembered of matching.length ? matching : [null]) {
         state.clips.push({
-          id: uid(), file, url: URL.createObjectURL(file), name: file.name, duration,
+          id: uid(), file, url: URL.createObjectURL(file), name: file.name, duration, width, height,
           start: remembered ? Math.max(0, Math.min(duration - 0.05, Number(remembered.start) || 0)) : 0,
           end: remembered ? Math.max(0.05, Math.min(duration, Number(remembered.end) || duration)) : duration,
           volume: remembered ? Math.max(0, Math.min(100, Number(remembered.sourceAudioPercent) || 0)) : 35,
@@ -1153,14 +1161,82 @@ function updateLogoStage() {
   else refs.logoStageVideo.onloadedmetadata = seek;
 }
 
+const OUTPUT_PRESETS = new Set(["1080x1920", "720x1280", "1920x1080", "1280x720", "1080x1080", "1080x1350"]);
+const CUSTOM_DIMENSION_MIN = 64;
+const CUSTOM_DIMENSION_MAX = 4096;
+
+function isCustomDimension(value) {
+  return Number.isInteger(value) && value >= CUSTOM_DIMENSION_MIN && value <= CUSTOM_DIMENSION_MAX && value % 2 === 0;
+}
+
+function outputDimensions() {
+  const mode = refs.resolution.value;
+  if (mode === "custom") {
+    const width = Number(refs.customOutputWidth.value);
+    const height = Number(refs.customOutputHeight.value);
+    return isCustomDimension(width) && isCustomDimension(height) ? { width, height } : null;
+  }
+  if (OUTPUT_PRESETS.has(mode)) {
+    const [width, height] = mode.split("x").map(Number);
+    return { width, height };
+  }
+  const clip = state.clips[0];
+  if (!clip?.width || !clip.height) return null;
+  // H.264 with 4:2:0 chroma requires even dimensions.
+  return { width: Math.max(2, clip.width - clip.width % 2), height: Math.max(2, clip.height - clip.height % 2) };
+}
+
+function restoreOutputSize(output, isDraft = false) {
+  let mode = output?.resolution;
+  // Older autosaves stored the former default even when it was never chosen.
+  if (mode === "1080") mode = isDraft ? "source" : "1080x1920";
+  if (mode === "720") mode = "720x1280";
+  refs.resolution.value = OUTPUT_PRESETS.has(mode) || mode === "custom" ? mode : "source";
+  refs.customOutputWidth.value = output?.customWidth ?? "1080";
+  refs.customOutputHeight.value = output?.customHeight ?? "1920";
+}
+
+function updateOutputSize() {
+  const frame = outputDimensions();
+  const isCustom = refs.resolution.value === "custom";
+  const clip = state.clips[0];
+  $("#customOutputSize").hidden = !isCustom;
+  for (const input of [refs.customOutputWidth, refs.customOutputHeight]) {
+    input.setAttribute("aria-invalid", String(isCustom && !isCustomDimension(Number(input.value))));
+  }
+  const size = frame ? toFaDigits(`${frame.width} × ${frame.height}`) : "";
+  refs.outputSummary.textContent = size || "—";
+  const hint = $("#outputSizeHint");
+  hint.classList.toggle("is-invalid", isCustom && !frame);
+  if (frame) {
+    const adjusted = refs.resolution.value === "source" && (clip.width !== frame.width || clip.height !== frame.height);
+    const note = adjusted ? " · ابعاد فرد برای ساخت MP4 به عدد زوج تبدیل شد." : "";
+    hint.textContent = `ابعاد خروجی: ${size} پیکسل${note}`;
+  } else {
+    hint.textContent = isCustom
+      ? "عرض و ارتفاع باید عدد زوج بین ۶۴ تا ۴۰۹۶ پیکسل باشند."
+      : "با افزودن اولین کلیپ، ابعاد خروجی مشخص می‌شود.";
+  }
+
+  const ratio = frame ? frame.width / frame.height : 9 / 16;
+  for (const stage of [refs.mixPreviewStage, refs.logoStageVideo.parentElement]) {
+    stage.style.setProperty("--frame-ratio", String(ratio));
+  }
+  const isShorts = frame && frame.width * 16 === frame.height * 9;
+  $("#safeGuideToggle").hidden = !isShorts;
+  $("#shortsSafeGuide").hidden = !isShorts || !$("#showSafeGuide").checked;
+  updateLogoPreviewSize(frame || undefined);
+  return frame;
+}
+
 function updateSummary() {
   const total = state.clips.reduce((sum, clip) => sum + clipDuration(clip), 0);
   refs.totalDuration.textContent = formatTime(total);
   refs.clipCount.textContent = toFaDigits(state.clips.length);
-  refs.mixPreviewButton.disabled = state.clips.length === 0 || state.rendering;
-  refs.renderButton.disabled = state.clips.length === 0 || state.rendering || location.protocol === "file:";
+  const frame = updateOutputSize();
+  refs.mixPreviewButton.disabled = !frame || state.clips.length === 0 || state.rendering;
+  refs.renderButton.disabled = !frame || state.clips.length === 0 || state.rendering || location.protocol === "file:";
   refs.renderButton.title = location.protocol === "file:" ? "برای ساخت خروجی، برنامه را با Start Flow2Short.command باز کنید." : "";
-  refs.outputSummary.textContent = refs.resolution.value === "720" ? "۷۲۰ × ۱۲۸۰" : "۱۰۸۰ × ۱۹۲۰";
   updateDeviceReadiness();
 }
 
@@ -1262,12 +1338,14 @@ function formatPreciseTime(seconds) {
   return toFaDigits(`${String(Math.floor(ms / 60000)).padStart(2, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}.${String(ms % 1000).padStart(3, "0")}`);
 }
 
-function transitionFreezeKey(clip) {
-  return `${clip.id}:${clip.end}:${refs.fitMode.value}`;
+function transitionFreezeKey(clip, frame = outputDimensions()) {
+  return `${clip.id}:${clip.end}:${refs.fitMode.value}:${frame?.width}x${frame?.height}`;
 }
 
 function prepareTransitionFreeze(clip) {
-  const key = transitionFreezeKey(clip);
+  const frame = outputDimensions();
+  if (!frame) return Promise.resolve("");
+  const key = transitionFreezeKey(clip, frame);
   if (state.preview.freezeCache.has(key)) return Promise.resolve(state.preview.freezeCache.get(key));
   if (state.preview.freezePending.has(key)) return state.preview.freezePending.get(key);
   const pending = (async () => {
@@ -1285,8 +1363,9 @@ function prepareTransitionFreeze(clip) {
         if (Math.abs(video.currentTime - target) < 0.001 && video.readyState >= 2) resolve();
       });
       const canvas = document.createElement("canvas");
-      canvas.width = 360;
-      canvas.height = 640;
+      const previewScale = Math.min(1, 640 / Math.max(frame.width, frame.height));
+      canvas.width = Math.max(1, Math.round(frame.width * previewScale));
+      canvas.height = Math.max(1, Math.round(frame.height * previewScale));
       const context = canvas.getContext("2d");
       context.fillStyle = "#07111f";
       context.fillRect(0, 0, canvas.width, canvas.height);
@@ -1518,7 +1597,7 @@ async function playMixPreview() {
 }
 
 async function openMixPreview(startTime = 0) {
-  if (!state.clips.length) return;
+  if (!state.clips.length || !outputDimensions()) return;
   closePreview();
   buildPreviewSegments();
   refs.mixPreviewSeek.max = state.preview.total;
@@ -1557,6 +1636,7 @@ function moveClip(id, direction) {
   if (index < 0 || target < 0 || target >= state.clips.length) return;
   [state.clips[index], state.clips[target]] = [state.clips[target], state.clips[index]];
   renderClipCards();
+  updateSummary();
   saveDraft();
 }
 
@@ -1621,7 +1701,7 @@ function handleClipField(event) {
 async function setAudio(kind, file) {
   if (!file) return;
   try {
-    const duration = await getMediaDuration(file);
+    const { duration } = await getMediaMetadata(file, "audio");
     if (state[kind]?.url) URL.revokeObjectURL(state[kind].url);
     state[kind] = { file, duration, url: URL.createObjectURL(file) };
     if (kind === "narration" && generatedNarration && generatedNarration !== file) {
@@ -1917,6 +1997,8 @@ function getRecipe() {
       output: {
         name: safeFileName(refs.outputName.value),
         resolution: refs.resolution.value,
+        customWidth: refs.customOutputWidth.value,
+        customHeight: refs.customOutputHeight.value,
         fitMode: refs.fitMode.value,
         quality: refs.quality.value,
       },
@@ -1955,7 +2037,7 @@ async function importProject(file) {
     state.remembered = { narration: recipe.project.narration || null, music: recipe.project.music || null, caption: recipe.project.caption || null, logo: recipe.project.logo || null };
     refs.projectTitle.value = recipe.project.title || "پروژه Flow2Short";
     refs.outputName.value = recipe.project.output?.name || "YouTube-Short-Final";
-    refs.resolution.value = recipe.project.output?.resolution || "1080";
+    restoreOutputSize(recipe.project.output);
     refs.fitMode.value = recipe.project.output?.fitMode || "cover";
     refs.quality.value = recipe.project.output?.quality || "balanced";
     $("#narrationVolume").value = recipe.project.narration?.volume ?? 100;
@@ -2006,7 +2088,7 @@ function loadPreferences() {
       state.remembered = { narration: draft.project.narration || null, music: draft.project.music || null, caption: draft.project.caption || null, logo: draft.project.logo || null };
       refs.projectTitle.value = draft.project.title || refs.projectTitle.value;
       refs.outputName.value = draft.project.output?.name || refs.outputName.value;
-      refs.resolution.value = draft.project.output?.resolution || refs.resolution.value;
+      restoreOutputSize(draft.project.output, true);
       refs.fitMode.value = draft.project.output?.fitMode || refs.fitMode.value;
       refs.quality.value = draft.project.output?.quality || refs.quality.value;
       $("#narrationVolume").value = draft.project.narration?.volume ?? 100;
@@ -2171,7 +2253,8 @@ function buildTransitionGraph(clips) {
 }
 
 async function renderVideo() {
-  if (!state.clips.length || state.rendering) return;
+  const frame = outputDimensions();
+  if (!frame || !state.clips.length || state.rendering) return;
   const missingImage = state.overlays.find((item) => item.kind === "image" && !item.file);
   if (missingImage) return showToast(`تصویر «${missingImage.name}» را دوباره انتخاب کنید.`);
   state.rendering = true;
@@ -2188,9 +2271,7 @@ async function renderVideo() {
   const workingFiles = [];
   try {
     const ffmpeg = await ensureFFmpeg();
-    const size = Number(refs.resolution.value);
-    const width = size;
-    const height = size === 720 ? 1280 : 1920;
+    const { width, height } = frame;
     const settings = encodeSettings();
     const segmentNames = [];
     const sourceNames = new Map();
@@ -2449,6 +2530,7 @@ function wireDragAndDrop() {
     const [moved] = state.clips.splice(from, 1);
     state.clips.splice(to, 0, moved);
     renderClipCards();
+    updateSummary();
     saveDraft();
   });
 }
@@ -2962,6 +3044,10 @@ function wireEvents() {
     refs.mixPreviewVideo.load();
   });
 
+  for (const input of [refs.customOutputWidth, refs.customOutputHeight]) {
+    input.addEventListener("input", updateSummary);
+    input.addEventListener("change", saveDraft);
+  }
   refs.projectTitle.addEventListener("change", saveDraft);
   [refs.outputName, refs.resolution, refs.fitMode, refs.quality, $("#burnCaptions")].forEach((input) => input.addEventListener("change", () => {
     if (input === refs.fitMode) updateLogoStage();
@@ -3053,22 +3139,22 @@ function init() {
 }
 
 async function startApp() {
-  if (document.documentElement.dataset.appVersion === "2.3.0") return init();
+  if (document.documentElement.dataset.appVersion === "2.4.0") return init();
   // A previously installed service worker may combine an old HTML page with
   // new JS. Refetch the page without its cached URL before wiring any events.
   if (location.protocol.startsWith("http")) {
     try {
       const freshUrl = new URL(`./index.html?flow2short-refresh=${Date.now()}`, APP_BASE_URL);
       const response = await fetch(freshUrl, { cache: "no-store" });
-      if (response.ok && (await response.text()).includes('data-app-version="2.3.0"')) {
+      if (response.ok && (await response.text()).includes('data-app-version="2.4.0"')) {
         const reloadUrl = new URL(location.href);
-        reloadUrl.searchParams.set("flow2short-ui", `2.3.0-${Date.now()}`);
+        reloadUrl.searchParams.set("flow2short-ui", `2.4.0-${Date.now()}`);
         location.replace(reloadUrl.href);
         return;
       }
     } catch (error) { console.warn("Could not refresh the app shell", error); }
   }
-  document.body.innerHTML = '<main style="max-width:36rem;margin:12vh auto;padding:2rem;font:18px/2 sans-serif;direction:rtl"><h1>نسخهٔ صفحه و برنامه هماهنگ نیست</h1><p>پنجرهٔ اجرای نسخهٔ قبلی را ببندید و Flow2Short نسخهٔ ۲.۳ را دوباره اجرا کنید. سپس این صفحه را تازه‌سازی کنید.</p><button type="button" onclick="location.reload()" style="padding:.7rem 1.5rem;cursor:pointer">تازه‌سازی صفحه</button></main>';
+  document.body.innerHTML = '<main style="max-width:36rem;margin:12vh auto;padding:2rem;font:18px/2 sans-serif;direction:rtl"><h1>نسخهٔ صفحه و برنامه هماهنگ نیست</h1><p>پنجرهٔ اجرای نسخهٔ قبلی را ببندید و Flow2Short نسخهٔ ۲.۴ را دوباره اجرا کنید. سپس این صفحه را تازه‌سازی کنید.</p><button type="button" onclick="location.reload()" style="padding:.7rem 1.5rem;cursor:pointer">تازه‌سازی صفحه</button></main>';
 }
 
 startApp();
