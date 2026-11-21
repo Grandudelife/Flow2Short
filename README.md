@@ -10,23 +10,27 @@
 
 ## دانلود و اجرای آخرین نسخه
 
-تمام لینک‌های این بخش به **آخرین کد شاخهٔ main** اشاره می‌کنند؛ نسخهٔ فعلی برنامه **۲.۴.۰** است و تغییرات جدید قاب خروجی را دارد.
+### مک — اپ مستقل ۲.۴.۰
 
-| سیستم | دانلود | روش اجرا پس از بازکردن ZIP |
-| --- | --- | --- |
-| مک | [دانلود آخرین نسخه برای مک (ZIP)](https://github.com/Grandudelife/Flow2Short/archive/refs/heads/main.zip) | فایل `Start Flow2Short.command` را اجرا کنید. |
-| ویندوز | [دانلود آخرین نسخه برای ویندوز (ZIP)](https://github.com/Grandudelife/Flow2Short/archive/refs/heads/main.zip) | فایل `Start Flow2Short Windows.bat` را اجرا کنید. |
-| مرورگر / توسعه | [دانلود آخرین نسخهٔ وب و سورس (ZIP)](https://github.com/Grandudelife/Flow2Short/archive/refs/heads/main.zip) | پوشهٔ `app/` را با یک وب‌سرور سرو کنید؛ برای اتصال Google از سرور محلی استفاده کنید. |
+**[دانلود Flow2Short برای مک — فایل اپلیکیشن ۲.۴.۰ (ZIP)](https://github.com/Grandudelife/Flow2Short/releases/download/macos-v2.4.0/Flow2Short-Mac.zip)** · [صفحهٔ انتشار و checksum](https://github.com/Grandudelife/Flow2Short/releases/tag/macos-v2.4.0)
 
-بستهٔ ZIP برای هر سه روش مشترک است و هر دو لانچر مک و ویندوز را دارد. این بستهٔ به‌روز با لانچر در **مرورگر** اجرا می‌شود و فایل نصب مستقل `.app` یا `.exe` نیست. بسته‌های مستقل قبلی نسخهٔ ۱.۰.۰ هنوز برای ۲.۴.۰ بازسازی نشده‌اند؛ برای دریافت امکانات جدید از لینک‌های بالا استفاده کنید.
+برای مک‌های **Apple Silicon (M1 و جدیدتر)** و **macOS 13 به بالا**:
 
-### راه‌اندازی روی مک و ویندوز
+۱. فایل `Flow2Short-Mac.zip` را دانلود و از حالت فشرده خارج کنید.
 
-۱. بسته را دانلود و از ZIP خارج کنید. برای اجرای این بسته Python 3 را نصب کنید؛ در مک، Ruby نیز برای اجرای امکانات بدون Google قابل استفاده است.
+۲. فایل **`Flow2Short Studio.app`** را به پوشهٔ **Applications** منتقل کنید. اگر نسخهٔ قبلی آنجا است، ابتدا برنامه را کامل ببندید و سپس فایل جدید را جایگزین کنید.
 
-۲. لانچر مخصوص سیستم خود را اجرا کنید. اگر مک اجرای آن را مسدود کرد، روی فایل راست‌کلیک کنید و **Open** را بزنید.
+۳. خود **`Flow2Short Studio.app`** را اجرا کنید. برنامه در پنجرهٔ مستقل باز می‌شود؛ برای اجرای این نسخه نیازی به مرورگر، Python یا ترمینال ندارید. موتور FFmpeg داخل اپ قرار دارد.
 
-۳. برنامه روی آدرس محلی در مرورگر باز می‌شود؛ پنجرهٔ لانچر را تا پایان کار باز بگذارید. فایل `index.html` را مستقیم باز نکنید؛ مرورگر روی آدرس `file://` اجازهٔ ساخت MP4 را نمی‌دهد.
+اگر macOS اجرا را مسدود کرد، پس از بررسی منبع دانلود، از **System Settings → Privacy & Security → Open Anyway** استفاده کنید. امضای بسته ad-hoc است و notarized نیست.
+
+[راهنمای نسخهٔ مستقل مک](https://github.com/Grandudelife/Flow2Short/blob/macos-native/macos/README.md)
+
+### ویندوز و نسخهٔ مرورگری
+
+- **اپ مستقل ویندوز (۱.۰.۰):** [دانلود فایل EXE](https://github.com/Grandudelife/Flow2Short/releases/download/windows-v1.0.0/Flow2Short-Windows.exe). ویندوز ۱۰ نسخهٔ ۱۸۰۹ به بالا یا ۱۱، پردازندهٔ Intel/AMD ۶۴بیتی و WebView2 Runtime. این بسته هنوز تغییرات ۲.۴.۰ را ندارد.
+- **استودیو به‌روز ۲.۴.۰ در مرورگر مک یا ویندوز:** [دانلود بستهٔ وب و لانچرها (ZIP)](https://github.com/Grandudelife/Flow2Short/archive/refs/heads/main.zip). در مک `Start Flow2Short.command` و در ویندوز `Start Flow2Short Windows.bat` را اجرا کنید. این روش مرورگر را باز می‌کند و اپ مستقل نیست؛ برای اجرای این بسته Python 3 لازم است (در مک، Ruby برای امکانات بدون Google نیز قابل استفاده است). پنجرهٔ لانچر را باز نگه دارید.
+- فایل `index.html` را مستقیم اجرا نکنید؛ رندر MP4 روی پروتکل `file://` ممکن نیست.
 
 ## از کلیپ خام تا خروجی
 
