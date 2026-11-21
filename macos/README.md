@@ -1,12 +1,12 @@
 # Flow2Short Studio for macOS
 
 نسخهٔ مستقل برای مک‌های Apple Silicon (M1 و جدیدتر)، با macOS 13 و جدیدتر.
-مبنای کد: `Grandudelife/Flow2Short`، commit `044b1bf476e17df0fc9a1c9519b733ccac44f85f`، نسخهٔ ۲.۳.
+رابط و تنظیمات خروجی با استودیو ۲.۴.۰ هماهنگ شده‌اند؛ قاب خروجی هم‌اندازهٔ اولین کلیپ یا با ابعاد دلخواه است.
 
 این نسخه در شاخهٔ [`macos-native`](https://github.com/Grandudelife/Flow2Short/tree/macos-native) منتشر شده است.
-[بستهٔ آمادهٔ مک را از Release دانلود کنید](https://github.com/Grandudelife/Flow2Short/releases/tag/macos-v1.0.0).
+[بستهٔ آمادهٔ مک را از Release دانلود کنید](https://github.com/Grandudelife/Flow2Short/releases/tag/macos-v2.4.0).
 فایل `Flow2Short-Mac.zip` شامل اپ است؛ `SHA256SUMS.txt` برای بررسی صحت دانلود ارائه می‌شود.
-دسترسی به نسخه تابع دسترسی شما به همین مخزن خصوصی است.
+
 
 ## اجرا
 

@@ -38,7 +38,8 @@ function testContext(oldShell) {
   const location = { href: "http://127.0.0.1:43121/", protocol: "http:", hostname: "127.0.0.1" };
   const document = {
     currentScript: { src: `${location.href}app.js` },
-    documentElement: { dataset: { appVersion: oldShell ? undefined : "2.3.0" } },
+    documentElement: { dataset: { appVersion: oldShell ? undefined : "2.4.0" } },
+    createElement: () => ({ get innerHTML() { return this.textContent; } }),
     querySelector(selector) { return element(selector.slice(1)); },
     querySelectorAll() { return []; },
     addEventListener() {},
@@ -144,15 +145,37 @@ async function main() {
   vm.runInContext("generateCaptionsFromAudio = () => new Promise(() => {})", fresh.context);
   await vm.runInContext("generateNarration()", fresh.context);
   assert.equal(fresh.element("ttsGenerate").disabled, false, "voice stays usable while accurate captions finish separately");
+  const output = testContext(false);
+  const run = (code) => vm.runInContext(code, output.context);
+  run(`restoreOutputSize({ resolution: "1080" }, true);
+    state.clips = [
+      { id: "wide", name: "wide.mp4", file: { size: 100 }, duration: 1, start: 0, end: 1, width: 1920, height: 1080 },
+      { id: "tall", name: "tall.mp4", file: { size: 100 }, duration: 1, start: 0, end: 1, width: 721, height: 1281 },
+    ]; updateSummary();`);
+  assert.equal(output.element("outputSummary").textContent, "۱۹۲۰ × ۱۰۸۰");
+  run('moveClip("tall", -1)');
+  assert.equal(output.element("outputSummary").textContent, "۷۲۰ × ۱۲۸۰");
+  run('restoreOutputSize({ resolution: "1080x1080" }); updateSummary()');
+  assert.equal(output.element("outputSummary").textContent, "۱۰۸۰ × ۱۰۸۰");
+  run('restoreOutputSize({ resolution: "custom", customWidth: 701, customHeight: 400 }); updateSummary()');
+  assert.equal(output.element("renderButton").disabled, true);
+  run('refs.customOutputWidth.value = "700"; updateSummary()');
+  assert.equal(output.element("renderButton").disabled, false);
+  assert.equal(output.element("outputSummary").textContent, "۷۰۰ × ۴۰۰");
+  const savedOutput = run("getRecipe().project.output");
+  run('restoreOutputSize({ resolution: "source" })');
+  output.context.savedOutput = savedOutput;
+  run("restoreOutputSize(savedOutput); updateSummary()");
+  assert.equal(output.element("outputSummary").textContent, "۷۰۰ × ۴۰۰");
   await checkPlayback(true);  // 1.6 HTML with newer preview JavaScript
   await checkPlayback(false); // matching current HTML and JavaScript
   const stale = testContext(true);
   let replacement = "";
-  stale.context.fetch = async () => ({ ok: true, text: async () => '<html data-app-version="2.3.0">' });
+  stale.context.fetch = async () => ({ ok: true, text: async () => '<html data-app-version="2.4.0">' });
   stale.context.location.replace = (url) => { replacement = url; };
   await vm.runInContext("startApp()", stale.context);
-  assert.match(replacement, /flow2short-ui=2\.3\.0-/, "old shell must reload fresh markup");
-  console.log("Preview play and time progression pass for old and current markup.");
+  assert.match(replacement, /flow2short-ui=2\.4\.0-/, "old shell must reload fresh markup");
+  console.log("Output sizing, recipe restore and preview playback checks passed.");
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -35,6 +35,7 @@ async function main() {
     const element = id => {
       if (!elements.has(id)) elements.set(id, {
         value: '', checked: false, disabled: false, hidden: false, dataset: {}, style: { setProperty() {} },
+        parentElement: { style: { setProperty() {} } },
         classList: { add() {}, remove() {}, toggle() {} },
         setAttribute() {}, removeAttribute() {}, append() {}, appendChild() {}, prepend() {}, addEventListener() {},
         showModal() {}, close() {}, querySelector() { return element('child'); }, querySelectorAll() { return []; }
@@ -44,7 +45,7 @@ async function main() {
     const document = {
       currentScript: { src: new URL('app.js', base).href }, querySelector: s => element(s.slice(1)),
       querySelectorAll: () => [], createElement: () => element(randomUUID()),
-      documentElement: { dataset: { appVersion: '2.3.0' } }, body: { append() {} }
+      documentElement: { dataset: { appVersion: '2.4.0' } }, body: { append() {} }
     };
     const location = { href: base, protocol: 'http:', hostname: '127.0.0.1' };
     const context = vm.createContext({ document, location, window: { FLOW2SHORT_DESKTOP: true, NativeFFmpeg: FFmpeg },
@@ -55,7 +56,7 @@ async function main() {
     let source = fs.readFileSync(path.join(resources, 'app/app.js'), 'utf8').replace(/\nstartApp\(\);\s*$/, '');
     source = source.replace(/const \{ FFmpeg \} = await import\([^\n]+\);/, 'const FFmpeg = window.NativeFFmpeg;');
     vm.runInContext(source, context);
-    element('resolution').value = '720'; element('quality').value = 'fast'; element('fitMode').value = 'contain';
+    element('resolution').value = '720x1280'; element('quality').value = 'fast'; element('fitMode').value = 'contain';
     element('burnCaptions').checked = true; element('outputName').value = 'Native-Render-Test';
     context.clipOne = new File([fs.readFileSync(path.join(fixtures, 'clip-one.mp4'))], 'clip-one.mp4', { type: 'video/mp4' });
     context.clipTwo = new File([fs.readFileSync(path.join(fixtures, 'clip-two-silent.mp4'))], 'clip-two.mp4', { type: 'video/mp4' });
@@ -80,6 +81,21 @@ async function main() {
     assert.equal((await global.fetch('/__native/file?name=input-0.mp4')).status, 404, 'Input temporary file leaked');
     assert.equal((await global.fetch('/__native/file?name=final.mp4')).status, 404, 'Output temporary file leaked');
     console.log('Real editor render: 720×1280 H.264/AAC, two trimmed clips (one silent), fade transition, burned ASS captions, duration 3 seconds; media cleanup passed.');
+
+    for (const [mode, width, height] of [['source',360,640],['custom',640,360]]) {
+      element('resolution').value = mode;
+      element('customOutputWidth').value = String(width);
+      element('customOutputHeight').value = String(height);
+      vm.runInContext('state.clips.forEach(c => Object.assign(c,{width:360,height:640}));', context);
+      await vm.runInContext('renderVideo()', context);
+      const url = vm.runInContext('state.outputUrl', context);
+      assert.notEqual(url, outputURL, element('renderMessage').textContent);
+      const target = path.join(fixtures, mode + '.mp4');
+      fs.writeFileSync(target, Buffer.from(await (await originalFetch(url)).arrayBuffer()));
+      const dimensions = JSON.parse(execFileSync(path.join(resources, 'ffprobe'), ['-v','error','-show_streams','-of','json',target])).streams.find(s=>s.codec_type==='video');
+      assert.equal(dimensions.width,width); assert.equal(dimensions.height,height);
+      console.log(mode + ' output verified: ' + width + 'x' + height);
+    }
 
     const engine = new FFmpeg(); await engine.load();
     await engine.writeFile('input-0.mp4', new Uint8Array(await context.clipOne.arrayBuffer()));

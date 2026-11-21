@@ -52,15 +52,15 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent 'dist/Flow2Short Studio.app' dist/Flow2Short-Mac.zip
           (cd dist && shasum -a 256 Flow2Short-Mac.zip > SHA256SUMS.txt)
           unzip -t dist/Flow2Short-Mac.zip > /dev/null
-      - name: Publish first macOS prerelease
+      - name: Publish macOS 2.4.0 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=macos-v1.0.0
+          TAG=macos-v2.4.0
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             echo "Release $TAG already exists; preserving its original assets."
           else
             gh release create "$TAG" dist/Flow2Short-Mac.zip dist/SHA256SUMS.txt \
               --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
-              --title 'Flow2Short Studio for macOS 1.0.0' --notes-file macos/RELEASE_NOTES.md
+              --title 'Flow2Short Studio for macOS 2.4.0' --notes-file macos/RELEASE_NOTES.md
           fi
